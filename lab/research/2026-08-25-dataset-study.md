@@ -106,11 +106,40 @@ scénarios rejouables. O3 (GUIDE) porte la démo "métriques SOC" en
 complément. La piste O1 (transposition QAUDJRN) se nourrira des
 scénarios CERT.
 
+## Phase 3 — précalculs et tools graphiques (2026-08-25)
+
+Architecture chatbot retenue (D1) : NL→SQL en socle + tools graphiques
+paramétrés (pas de génération de code à la volée) + précalculs pour les
+outliers et le profil des données.
+
+Ajouts dans la base (`build_db.py stats`) :
+
+- `cert_daily_baseline` (785 268 user-jours) : comptage quotidien par
+  utilisateur et par flux, avec moyenne et écart-type par utilisateur.
+  La détection d'outliers devient un SELECT instantané.
+- `data_profile` (94 lignes) : nature de chaque variable (cardinalité,
+  nulls, min/max, top 5 valeurs) — réponses en ~1 ms aux questions sur
+  la structure des données.
+
+Tools graphiques (`charts.py`, palette dataviz validée CVD, PNG +
+résumé JSON pour le commentaire du chatbot) :
+
+| Tool | Paramètres | Vérifié |
+|------|------------|---------|
+| `user_timeline` | user, start, end | pic http de AAM0658 dans sa fenêtre d'intrusion surlignée |
+| `usb_activity` | user, start, end | barres, moyenne utilisateur, jours > 3σ en rouge |
+| `after_hours` | start, end, top | l'insider MPM0220 ressort en tête sur sept-oct 2010 |
+| `outliers` | stream, sigma, start, end | **3σ sur device : 149 utilisateurs signalés dont 30 insiders confirmés sur 70** |
+
+**F8 — La détection par seuil retrouve les insiders.** Le chiffre
+30/70 au 3σ sur un seul flux, vérifiable contre `cert_insiders`, est
+l'argument central de la démo : la baseline fonctionne sur ce dataset.
+
 ## Prochaine étape proposée
 
-Choisir l'angle démo (enquête CERT, métriques GUIDE, ou les deux), puis
-brancher le chatbot : NL→SQL sur la SQLite avec le Qwen3.8-27B du kit,
-plus tables de pré-agrégats GUIDE si cet axe est retenu.
+Brancher le chatbot : serveur qui expose au Qwen3.8-27B du kit un tool
+SQL (lecture seule) + les 4 tools graphiques en function calling, et un
+prompt système contenant le schéma et un extrait de `data_profile`.
 
 ## Sources
 

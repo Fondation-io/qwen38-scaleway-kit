@@ -1,3 +1,4 @@
 .env
 artifacts/
 lab/data/
+lab/output/
