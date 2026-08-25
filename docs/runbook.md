@@ -114,8 +114,17 @@ docker run -d --name vllm --gpus all --restart unless-stopped \
   --limit-mm-per-prompt '{"image": 4, "video": 0}' \
   --max-num-seqs 32 \
   --reasoning-parser qwen3 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_xml \
   --api-key $VLLM_API_KEY
 ```
+
+`--enable-auto-tool-choice --tool-call-parser qwen3_xml` active le
+function calling (requis par l'app démo lab/). Piège vérifié : le
+reasoning parser s'appelle `qwen3` mais le tool parser `qwen3_xml`
+(`qwen3` n'existe pas pour les tools et fait crash-looper le conteneur ;
+`hermes` démarre mais ne parse pas le format XML de Qwen3.8 — les
+appels d'outils restent alors en texte brut dans `content`).
 
 `--limit-mm-per-prompt '{"image": 4, "video": 0}'` est OBLIGATOIRE sur
 24 GB/GPU : le modèle est multimodal et, sans cette borne, vLLM

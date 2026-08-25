@@ -82,6 +82,8 @@ docker run -d --name vllm --gpus all --restart unless-stopped \
   --max-num-seqs 32 \
   --reasoning-parser qwen3 \
   --speculative-config '{"method":"mtp","num_speculative_tokens":2}' \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_xml \
   --api-key $VLLM_API_KEY
 EOF
 ```
