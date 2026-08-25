@@ -26,7 +26,7 @@ export function ThreadListSidebar({
                 size="lg"
                 render={
                   <a
-                    href="https://assistant-ui.com"
+                    href="https://github.com/Fondation-io/qwen38-scaleway-kit"
                     target="_blank"
                     rel="noopener noreferrer"
                   />
@@ -37,8 +37,9 @@ export function ThreadListSidebar({
                 </div>
                 <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
                   <span className="aui-sidebar-header-title font-semibold">
-                    assistant-ui
+                    Enquête sécurité
                   </span>
+                  <span>Qwen3.8-27B</span>
                 </div>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -56,7 +57,7 @@ export function ThreadListSidebar({
               size="lg"
               render={
                 <a
-                  href="https://github.com/assistant-ui/assistant-ui"
+                  href="https://github.com/Fondation-io/qwen38-scaleway-kit"
                   target="_blank"
                   rel="noopener noreferrer"
                 />
