@@ -17,6 +17,7 @@ marques fines, grille discrète, légende dès 2 séries).
 """
 import argparse
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -26,8 +27,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 LAB = Path(__file__).resolve().parents[1]
-DB = LAB / "data" / "security-events.sqlite"
-OUT = LAB / "output"
+DB = Path(os.environ.get("DB_PATH", LAB / "data" / "security-events.sqlite"))
+OUT = Path(os.environ.get("CHARTS_OUT", LAB / "output"))
 
 # Palette de référence (dataviz skill, mode clair, ordre fixe non cyclé)
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # slots 1-4

@@ -10,6 +10,7 @@ Datasets are fetched with kagglehub (anonymous, public datasets) and
 cached under ~/.cache/kagglehub. The SQLite file is written to
 lab/data/security-events.sqlite (gitignored).
 """
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -17,7 +18,8 @@ from pathlib import Path
 import kagglehub
 import pandas as pd
 
-DB = Path(__file__).resolve().parents[1] / "data" / "security-events.sqlite"
+DB = Path(os.environ.get(
+    "DB_PATH", Path(__file__).resolve().parents[1] / "data" / "security-events.sqlite"))
 CHUNK = 200_000
 
 
