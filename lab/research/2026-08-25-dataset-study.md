@@ -65,11 +65,52 @@ Piste hybride notée : générer O1 en rejouant les scénarios d'attaque
 annotés d'O2 dans le vocabulaire QAUDJRN, pour cumuler fidélité de
 format et réalisme comportemental.
 
+## Phase 2 — téléchargement, ingestion SQLite, mesures (2026-08-25)
+
+O2 et O3 téléchargés (kagglehub, accès anonyme) et ingérés dans
+`lab/data/security-events.sqlite` (7,5 Go, gitignored) via
+`lab/scripts/build_db.py`. Volumes :
+
+| Table | Lignes | Contenu |
+|-------|--------|---------|
+| guide_evidence | 13 664 829 | O3 train+test, colonne `split` |
+| cert_logon / device / file / email | 854k / 405k / 446k / 2,6M | O2, flux complets |
+| cert_http | 2 281 739 | O2, insiders complets + 5 % des autres utilisateurs (échantillonnage par utilisateur, biais assumé : le web des utilisateurs sains est sous-représenté) |
+| cert_insiders | 191 | vérité terrain toutes releases — filtrer `dataset='4.2'` (70 insiders) |
+| cert_users | 845 | dernier snapshot LDAP (nom, rôle, département, superviseur) |
+
+**F4 — GUIDE est anonymisé au point de casser le storytelling.** Titres
+d'alertes, comptes, fichiers, URLs sont des codes numériques. Restent
+lisibles : Category (18), EntityType (21), MitreTechniques (390+),
+IncidentGrade, verdicts. Un chatbot peut répondre "combien d'incidents
+d'exfiltration TruePositive" mais pas raconter une attaque.
+
+**F5 — CERT r4.2 est narrativement riche.** Utilisateurs nommés avec
+organigramme, horodatages, 5 scénarios d'intrusion documentés
+(`answers/scenarios.txt`) avec fenêtres exactes par insider. Les
+comportements sont visibles dans les données (ex. pics USB d'un insider
+scénario 2 : 6 branchements le 21/10/2010 contre 1-2 en temps normal).
+Limite : contenus texte (emails, pages web) = sacs de mots aléatoires,
+seuls les métadonnées et les motifs temporels portent du sens.
+
+**F6 — Latences SQLite mesurées.** CERT : 0-1 ms (requêtes indexées
+user/date/pc), temps réel garanti. GUIDE : 39 ms sur requête ciblée par
+IncidentId, mais 3,3-11,4 s sur les agrégations pleine table (13,7M
+lignes). Pour un chatbot temps réel sur GUIDE : pré-agrégats ou tables
+de synthèse nécessaires.
+
+**F7 — Verdict d'usage.** O2 (CERT) porte la démo "enquête sur une
+intrusion" : questions naturelles ("qui s'est connecté après minuit ?",
+"montre l'activité USB de X avant son départ"), réponses nominatives,
+scénarios rejouables. O3 (GUIDE) porte la démo "métriques SOC" en
+complément. La piste O1 (transposition QAUDJRN) se nourrira des
+scénarios CERT.
+
 ## Prochaine étape proposée
 
-Télécharger O2 et O3, profiler (volumes, schémas, cardinalités,
-densité d'évènements malveillants), et prototyper 20 questions type du
-chatbot contre chaque schéma pour juger lequel porte le mieux la démo.
+Choisir l'angle démo (enquête CERT, métriques GUIDE, ou les deux), puis
+brancher le chatbot : NL→SQL sur la SQLite avec le Qwen3.8-27B du kit,
+plus tables de pré-agrégats GUIDE si cet axe est retenu.
 
 ## Sources
 
