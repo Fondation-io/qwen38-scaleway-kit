@@ -78,6 +78,7 @@ const makeSqlToolUI = (options: {
   toolName: string;
   runningLabel: string;
   summaryLabel: string;
+  collapsedSql?: boolean;
 }) =>
   makeAssistantToolUI<SqlToolArgs, SqlToolResult>({
     toolName: options.toolName,
@@ -110,14 +111,23 @@ const makeSqlToolUI = (options: {
 
       return (
         <div className="my-2 flex flex-col gap-2 rounded-lg border p-3">
-          <details>
-            <summary className="text-muted-foreground cursor-pointer text-xs font-medium select-none">
-              {options.summaryLabel}
-            </summary>
-            <div className="mt-2">
+          {options.collapsedSql ? (
+            <details>
+              <summary className="text-muted-foreground cursor-pointer text-xs font-medium select-none">
+                {options.summaryLabel}
+              </summary>
+              <div className="mt-2">
+                <SqlText sql={sqlText} />
+              </div>
+            </details>
+          ) : (
+            <>
+              <span className="text-muted-foreground text-xs font-medium">
+                {options.summaryLabel}
+              </span>
               <SqlText sql={sqlText} />
-            </div>
-          </details>
+            </>
+          )}
           <ResultTable result={result} />
         </div>
       );
@@ -134,4 +144,5 @@ export const DescribeDataToolUI = makeSqlToolUI({
   toolName: "describe_data",
   runningLabel: "Lecture du schéma des données…",
   summaryLabel: "Description des données",
+  collapsedSql: true,
 });
