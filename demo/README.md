@@ -48,3 +48,19 @@ bun dev                      # http://localhost:3000
   fenêtre d'intrusion surlignée.
 - A4 "Quels utilisateurs sont anormaux sur le flux USB ?" → `outliers`,
   149 utilisateurs dont 30 insiders confirmés listés.
+
+## Déploiement (validé 2026-08-25)
+
+L'image est buildée par GitHub Actions à chaque push sur `main` touchant
+`demo/` et publiée sur `ghcr.io/fondation-io/qwen38-demo:latest`
+(publique). Déploiement sur l'instance GPU du kit :
+
+```bash
+scripts/deploy-demo.sh <ip-instance>            # rsync base locale + pull + run
+scripts/deploy-demo.sh <ip-instance> --build-db # sans base locale (~45 min)
+```
+
+L'app tourne en `--network host` (vLLM en localhost), base et PNG dans
+le volume `/root/demo-data`. Accès restreint par security group (ouvrir
+le port 3000 aux IPs voulues). Pour une exposition publique : reverse
+proxy TLS + authentification devant, jamais le port nu.
