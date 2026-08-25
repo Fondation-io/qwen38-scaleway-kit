@@ -60,6 +60,29 @@ Détail des choix, du profiling et des mesures :
 aussi des baselines par utilisateur (détection d'anomalies en SQL
 instantané) et le profil statistique des 94 colonnes.
 
+### Transposition IBM i — NON implémentée à ce stade
+
+Aucun dataset public d'évènements IBM i (journal d'audit QAUDJRN)
+n'existe ; les données ci-dessus sont servies dans leur vocabulaire
+d'origine, sans traduction. La cible visée pour une démo face à un
+client IBM i est de rejouer les scénarios d'intrusion du CERT dans le
+format QAUDJRN, dont la structure est documentée publiquement (Fortra,
+parser Google SecOps, guide 400school — références dans l'étude).
+Correspondance proposée, à valider avec un expert IBM i :
+
+| Flux CERT | Types d'entrées QAUDJRN visés |
+|-----------|-------------------------------|
+| cert_logon (connexions, échecs) | PW (mot de passe/utilisateur invalide), entrées de session QHST |
+| cert_file (accès fichiers) | ZR / ZC (lecture / modification d'objet), AF (échec d'autorité) |
+| cert_device (supports amovibles) | pas d'équivalent direct — à modéliser en accès objet + description de poste (DV) |
+| changements de droits des scénarios | CP (profil utilisateur), CA (autorité), OW (propriétaire), SV (valeur système) |
+| cert_http / cert_email | hors périmètre QAUDJRN (télémétrie réseau/messagerie, autre source sur IBM i) |
+
+Tant que cette transposition n'est pas faite, la démo prouve la
+mécanique (NL→SQL, outils graphiques, détection d'anomalies avec vérité
+terrain) sur des évènements génériques d'entreprise, pas le vocabulaire
+IBM i.
+
 ### Ce qu'on peut lui demander
 
 Le chatbot dispose de 6 outils : SQL en lecture seule, description des
