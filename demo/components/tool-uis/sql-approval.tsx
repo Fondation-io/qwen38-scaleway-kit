@@ -2,7 +2,7 @@
 
 import { makeAssistantTool } from "@assistant-ui/react";
 import { CheckIcon, XIcon, ShieldAlertIcon, Loader2Icon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { ToolErrorBoundary } from "@/components/tool-uis/tool-error-boundary";
 
@@ -78,15 +78,60 @@ function logDecision(decision: string, sql: string) {
   }).catch(() => {});
 }
 
+type ApprovalResponse =
+  | SqlResult
+  | { status: "approval_required"; reason?: string };
+
 function SqlApprovalRender(props: {
   args: { sql?: unknown };
   result?: unknown;
   addResult: (result: unknown) => void;
 }) {
-  const [busy, setBusy] = useState(false);
   const sql = typeof props.args?.sql === "string" ? props.args.sql : "";
   const result = props.result as SqlResult | undefined;
   const addResult = props.addResult as (r: SqlResult) => void;
+
+  // "checking" = évaluation heuristique en cours ; "awaiting" = risque détecté,
+  // on attend la décision de l'analyste.
+  const [phase, setPhase] = useState<"checking" | "awaiting">("checking");
+  const [reason, setReason] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
+  const startedRef = useRef(false);
+
+  const runSql = async (approve: boolean): Promise<SqlResult> => {
+    const res = await fetch("/api/sql", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sql, approved: approve }),
+    });
+    return (await res.json()) as SqlResult;
+  };
+
+  // Évaluation initiale : exécute directement si faible risque, sinon passe en
+  // attente d'approbation. Ne tourne qu'une fois.
+  useEffect(() => {
+    if (startedRef.current || !sql || result !== undefined) return;
+    startedRef.current = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/sql", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sql }),
+        });
+        const data = (await res.json()) as ApprovalResponse;
+        if ("status" in data && data.status === "approval_required") {
+          setReason(data.reason);
+          setPhase("awaiting");
+        } else {
+          addResult(data as SqlResult);
+        }
+      } catch (e) {
+        addResult({ error: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sql]);
 
   const sqlBlock = (
     <pre className="bg-muted/50 text-foreground/90 overflow-x-auto rounded-md p-2.5 font-mono text-xs whitespace-pre-wrap">
@@ -100,7 +145,7 @@ function SqlApprovalRender(props: {
       <ToolErrorBoundary toolName="sql_query">
         <div className="my-2 flex flex-col gap-2 rounded-lg border p-3">
           <span className="text-muted-foreground text-xs font-medium">
-            Requête SQL (validée)
+            Requête SQL
           </span>
           {sqlBlock}
           <ResultView result={result} />
@@ -109,17 +154,25 @@ function SqlApprovalRender(props: {
     );
   }
 
+  // Faible risque : exécution auto, on affiche juste la requête en cours.
+  if (phase === "checking") {
+    return (
+      <div className="my-2 flex flex-col gap-2 rounded-lg border p-3">
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <Loader2Icon className="size-3.5 animate-spin" />
+          Évaluation de la requête…
+        </div>
+        {sqlBlock}
+      </div>
+    );
+  }
+
   const approve = async () => {
     if (busy || !sql) return;
     setBusy(true);
     logDecision("approved", sql);
     try {
-      const res = await fetch("/api/sql", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sql }),
-      });
-      addResult((await res.json()) as SqlResult);
+      addResult(await runSql(true));
     } catch (e) {
       addResult({ error: e instanceof Error ? e.message : String(e) });
     }
@@ -135,11 +188,12 @@ function SqlApprovalRender(props: {
     <div className="border-amber-500/40 bg-amber-500/5 my-2 flex flex-col gap-2 rounded-lg border p-3">
       <div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-500">
         <ShieldAlertIcon className="size-4" />
-        Validation requise — accès à la base d&apos;audit
+        Validation requise — risque détecté
       </div>
       <p className="text-muted-foreground text-xs">
-        L&apos;agent demande à exécuter cette requête en lecture seule. Approuvez
-        pour l&apos;exécuter, refusez pour la bloquer.
+        {reason ??
+          "Cette requête a été signalée comme sensible."}{" "}
+        Approuvez pour l&apos;exécuter, refusez pour la bloquer.
       </p>
       {sqlBlock}
       <div className="flex gap-2">
@@ -171,7 +225,7 @@ function SqlApprovalRender(props: {
 export const SqlApprovalTool = makeAssistantTool({
   toolName: "sql_query",
   description:
-    "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i. La requête est soumise à validation humaine avant exécution : formule une requête claire et autoportante.",
+    "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i. Les requêtes d'agrégation s'exécutent directement ; celles qui lisent du contenu sensible en clair peuvent demander une validation humaine. Formule une requête claire et autoportante.",
   parameters: z.object({
     sql: z.string().describe("Requête SQL (SELECT ou WITH ... SELECT)"),
   }),

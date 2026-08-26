@@ -40,6 +40,38 @@ export interface GuardVerdict {
   parsed: boolean; // true = validé par l'AST ; false = validé par le repli regex
 }
 
+// Colonnes à contenu sensible (charge utile / PII exfiltrable).
+const SENSITIVE_COLUMNS =
+  /\b(content|object_preview|recipients|sender|attachments)\b/i;
+const SELECT_STAR = /select\s+\*/i;
+// Vues dont un SELECT * expose ce contenu.
+const SENSITIVE_VIEWS = /\b(qaudjrn_mail|qaudjrn_object)\b/i;
+const AGGREGATE = /\b(count|sum|avg|min|max)\s*\(|\bgroup\s+by\b/i;
+
+export interface RiskVerdict {
+  risky: boolean;
+  reason?: string;
+}
+
+// Heuristique appliquée APRÈS parsing : une requête est « à risque » si elle
+// lit du contenu sensible en clair (corps de mail, objets exfiltrés,
+// destinataires, pièces jointes) SANS agrégation — donc si elle ramène des
+// enregistrements bruts plutôt que des compteurs. Les agrégats et comptages
+// passent sans friction.
+export function assessRisk(sql: string): RiskVerdict {
+  const readsContent =
+    SENSITIVE_COLUMNS.test(sql) ||
+    (SELECT_STAR.test(sql) && SENSITIVE_VIEWS.test(sql));
+  if (readsContent && !AGGREGATE.test(sql)) {
+    return {
+      risky: true,
+      reason:
+        "Lecture de contenu sensible en clair (corps de mail, objets, destinataires, pièces jointes) sans agrégation.",
+    };
+  }
+  return { risky: false };
+}
+
 // Repli quand le parser échoue : gardes conservatrices et restrictives.
 function conservativeFallback(sql: string): GuardVerdict {
   const text = sql.trim().replace(/;\s*$/, "");

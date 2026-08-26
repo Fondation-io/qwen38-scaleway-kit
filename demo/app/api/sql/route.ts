@@ -1,22 +1,39 @@
 import { runQuery } from "@/lib/db";
+import { assessRisk } from "@/lib/sql-guard";
 import { audit, newTraceId } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
-// Exécution d'une requête SQL APRÈS approbation humaine (gate front). La
-// requête repasse par la gate AST côté serveur (défense en profondeur : le
-// client ne peut pas contourner l'allowlist).
+// Exécution d'une requête SQL avec gate d'approbation CONDITIONNELLE :
+// - la gate AST re-tourne côté serveur (défense en profondeur) ;
+// - une heuristique classe le risque après parsing ; si la requête est jugée
+//   risquée et n'a PAS été explicitement approuvée, on renvoie
+//   { status: "approval_required" } sans exécuter — le front affiche la carte
+//   d'approbation. Sinon (faible risque, ou approuvée) on exécute.
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     sql?: string;
+    approved?: boolean;
     traceId?: string;
   };
   const traceId = body.traceId ?? newTraceId();
   const sql = typeof body.sql === "string" ? body.sql : "";
+  const approved = body.approved === true;
+
+  const risk = assessRisk(sql);
+  if (risk.risky && !approved) {
+    await audit(traceId, "sql_approval", {
+      decision: "requested",
+      reason: risk.reason,
+      sql,
+    });
+    return Response.json({ status: "approval_required", reason: risk.reason });
+  }
 
   await audit(traceId, "tool_call", {
     tool: "sql_query",
-    approved: true,
+    approved: risk.risky ? true : undefined,
+    autoApproved: risk.risky ? undefined : true,
     args: { sql },
   });
   const started = Date.now();
@@ -25,7 +42,6 @@ export async function POST(req: Request) {
     await audit(traceId, "tool_result", {
       tool: "sql_query",
       ok: true,
-      approved: true,
       durationMs: Date.now() - started,
       rowCount: result.rowCount,
     });
@@ -35,7 +51,6 @@ export async function POST(req: Request) {
     await audit(traceId, "tool_error", {
       tool: "sql_query",
       ok: false,
-      approved: true,
       durationMs: Date.now() - started,
       error: message,
     });
