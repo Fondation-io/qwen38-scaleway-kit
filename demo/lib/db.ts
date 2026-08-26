@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { guardSql } from "@/lib/sql-guard";
 
 const MAX_ROWS = 200;
 const MAX_SQL_LENGTH = 5000;
@@ -21,12 +22,6 @@ function getDb(): DatabaseSync {
   return db;
 }
 
-const FORBIDDEN =
-  /\b(ATTACH|DETACH|PRAGMA|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|VACUUM|REINDEX|TRIGGER)\b/i;
-
-// Introspection et tables retirées du récit IBM i : hors périmètre.
-const BLOCKED_IDENTIFIERS = /\b(sqlite_[a-z_]+|cert_http)\b/i;
-
 export interface QueryResult {
   columns: string[];
   rows: unknown[][];
@@ -41,25 +36,16 @@ export function runQuery(sql: string): QueryResult {
     throw new Error(`Requête trop longue (max ${MAX_SQL_LENGTH} caractères).`);
   }
 
+  const verdict = guardSql(sql);
+  if (!verdict.ok) {
+    throw new Error(`Requête refusée par la gate : ${verdict.reason}`);
+  }
+  if (!verdict.parsed) {
+    // Le parser AST a échoué ; on est passé par le repli regex strict.
+    console.warn("[sql-guard] fallback regex utilisé (parse AST en échec)");
+  }
+
   let text = sql.trim().replace(/;\s*$/, "");
-  if (text.includes(";")) {
-    throw new Error("Une seule instruction SQL est autorisée (pas de ';').");
-  }
-  if (!/^(SELECT|WITH)\b/i.test(text)) {
-    throw new Error(
-      "Seules les requêtes en lecture (SELECT ou WITH ... SELECT) sont autorisées.",
-    );
-  }
-  if (FORBIDDEN.test(text)) {
-    throw new Error(
-      "Mot-clé interdit (écriture, PRAGMA, ATTACH, DROP…). Base en lecture seule.",
-    );
-  }
-  if (BLOCKED_IDENTIFIERS.test(text)) {
-    throw new Error(
-      "Accès refusé : introspection SQLite et tables hors périmètre (cert_http) sont bloquées.",
-    );
-  }
   if (!/\bLIMIT\s+\d+/i.test(text)) {
     text = `${text} LIMIT ${MAX_ROWS}`;
   }
