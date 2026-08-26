@@ -90,11 +90,18 @@ def build_cert(con):
     insiders = {r[0] for r in con.execute(
         "SELECT DISTINCT [user] FROM cert_insiders")}
 
-    # Annuaire : dernier snapshot LDAP disponible
+    # Annuaire : union de tous les snapshots LDAP mensuels (le dernier gagne
+    # pour les attributs). Le seul dernier snapshot exclut les insiders qui ont
+    # quitté l'entreprise (0/70 couverts) ; l'union les réintègre (70/70).
     ldap_files = sorted((data / "LDAP").glob("*.csv"))
     if ldap_files:
         con.execute("DROP TABLE IF EXISTS cert_users")
-        ingest_csv(con, ldap_files[-1], "cert_users")
+        merged = pd.concat(
+            (pd.read_csv(f) for f in ldap_files), ignore_index=True)
+        merged = merged.drop_duplicates(subset="user_id", keep="last")
+        merged.to_sql("cert_users", con, if_exists="replace", index=False)
+        print(f"  cert_users: {len(merged):,} profils (union {len(ldap_files)} "
+              f"snapshots)", flush=True)
 
     # Flux complets (volumes raisonnables)
     for name in ["logon", "device", "email", "file"]:
@@ -131,6 +138,124 @@ def build_cert(con):
                 con.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{table}_{col} "
                     f"ON {table}([{col}])")
+    con.commit()
+
+
+def build_ibmi(con):
+    """Couche IBM i (W1, mapping enrichi O2) : réancre les flux CERT sur les
+    vrais vecteurs d'exfiltration IBM i (sessions de transfert réseau, objets
+    Db2/IFS, profils sur-privilégiés, usurpation de profil). Tables sources CERT
+    laissées intactes ; on ajoute des tables compagnes + des vues v_qaudjrn_*.
+    """
+    import hashlib
+
+    def h(s: str) -> int:
+        return int(hashlib.md5(s.encode()).hexdigest()[:8], 16)
+
+    # 1. Special authorities (F2). Synthétique, déterministe. Les insiders du
+    # scénario 3 (admin) portent *ALLOBJ *SECADM ; ~8 % du parc porte une
+    # autorité spéciale (aligné sur l'État de la sécurité IBM i 2026).
+    s3 = {r[0] for r in con.execute(
+        "SELECT [user] FROM cert_insiders WHERE dataset='4.2' AND scenario=3")}
+    pool = ["*ALLOBJ", "*SECADM", "*JOBCTL", "*SPLCTL", "*SERVICE"]
+    con.execute("DROP TABLE IF EXISTS ibmi_user_authorities")
+    con.execute("CREATE TABLE ibmi_user_authorities "
+                "(user_profile TEXT PRIMARY KEY, special_authorities TEXT)")
+    rows = []
+    for (uid,) in con.execute("SELECT user_id FROM cert_users"):
+        if uid in s3:
+            auth = "*ALLOBJ *SECADM"
+        elif h(uid) % 100 < 8:
+            auth = pool[h(uid + "salt") % len(pool)]
+        else:
+            auth = ""
+        rows.append((uid, auth))
+    con.executemany(
+        "INSERT INTO ibmi_user_authorities VALUES (?,?)", rows)
+    print(f"  ibmi_user_authorities: {len(rows):,} profils "
+          f"({sum(1 for _,a in rows if a)} avec autorité spéciale)", flush=True)
+
+    # 2. Usurpation de profil (F3, entrée PS). Synthétisée depuis la vérité
+    # terrain : chaque insider du scénario 3 swappe vers le profil de son
+    # supérieur au début de sa fenêtre malveillante.
+    con.execute("DROP TABLE IF EXISTS ibmi_profile_swap")
+    con.execute("""
+        CREATE TABLE ibmi_profile_swap AS
+        SELECT i.start        AS timestamp,
+               'PS'           AS entry_type,
+               i.[user]       AS from_profile,
+               sup.user_id    AS to_profile,
+               'set_profile_handle (QWTSETP)' AS action
+        FROM cert_insiders i
+        JOIN cert_users u   ON u.user_id = i.[user]
+        JOIN cert_users sup ON sup.employee_name = u.supervisor
+        WHERE i.dataset='4.2' AND i.scenario=3
+    """)
+    n_ps = con.execute("SELECT COUNT(*) FROM ibmi_profile_swap").fetchone()[0]
+    print(f"  ibmi_profile_swap: {n_ps} événements PS", flush=True)
+
+    # 3. Vues QAUDJRN (vocabulaire IBM i). cert_http volontairement non exposé.
+    views = {
+        "v_profiles": """
+            SELECT u.user_id AS user_profile, u.employee_name, u.email, u.role,
+                   u.business_unit, u.functional_unit, u.department, u.team,
+                   u.supervisor,
+                   COALESCE(a.special_authorities, '') AS special_authorities
+            FROM cert_users u
+            LEFT JOIN ibmi_user_authorities a ON a.user_profile = u.user_id
+        """,
+        # cert_logon -> signon interactif 5250 / démarrage de job (JS)
+        "v_qaudjrn_signon": """
+            SELECT id, date AS timestamp, [user] AS user_profile,
+                   pc AS system, 'JS' AS entry_type,
+                   CASE activity WHEN 'Logon' THEN 'signon'
+                                 WHEN 'Logoff' THEN 'signoff' END AS action
+            FROM cert_logon
+        """,
+        # cert_device -> ouverture/fermeture d'une session de transfert réseau
+        # (Data Transfer ACS / FTP, job QZDASOINIT)
+        "v_qaudjrn_transfer": """
+            SELECT id, date AS timestamp, [user] AS user_profile,
+                   pc AS system, 'QZDASOINIT' AS job_name, 'SO' AS entry_type,
+                   'ACS/FTP' AS channel,
+                   CASE activity WHEN 'Connect' THEN 'session_open'
+                                 WHEN 'Disconnect' THEN 'session_close' END
+                       AS action
+            FROM cert_device
+        """,
+        # cert_file -> objet Db2/IFS transféré hors système (ZR : audité
+        # seulement si l'audit objet est actif, cf. F4)
+        "v_qaudjrn_object": """
+            SELECT id, date AS timestamp, [user] AS user_profile,
+                   pc AS system, 'ZR' AS entry_type,
+                   filename AS object_name, content AS object_preview
+            FROM cert_file
+        """,
+        # cert_email -> distribution SMTP sortante (ML)
+        "v_qaudjrn_mail": """
+            SELECT id, date AS timestamp, [user] AS user_profile,
+                   pc AS system, 'ML' AS entry_type,
+                   [to] AS recipients, [from] AS sender, size,
+                   attachments, content
+            FROM cert_email
+        """,
+        "v_qaudjrn_profile_swap": "SELECT * FROM ibmi_profile_swap",
+        # baseline quotidienne renommée en vocabulaire IBM i, http retiré
+        "v_daily_baseline": """
+            SELECT [user] AS user_profile, day, n_events, mean_events,
+                   std_events,
+                   CASE stream WHEN 'logon'  THEN 'signon'
+                               WHEN 'device' THEN 'transfer_session'
+                               WHEN 'email'  THEN 'mail'
+                               WHEN 'file'   THEN 'object_transfer' END AS stream
+            FROM cert_daily_baseline
+            WHERE stream <> 'http'
+        """,
+    }
+    for name, sql in views.items():
+        con.execute(f"DROP VIEW IF EXISTS {name}")
+        con.execute(f"CREATE VIEW {name} AS {sql}")
+        print(f"  vue {name}", flush=True)
     con.commit()
 
 
@@ -202,6 +327,9 @@ def main():
     if targets[0] in ("stats", "all"):
         print("== Précalculs (baselines + profil) ==", flush=True)
         build_stats(con)
+    if targets[0] in ("ibmi", "all"):
+        print("== Couche IBM i (vues QAUDJRN + enrichissement) ==", flush=True)
+        build_ibmi(con)
     for (name,) in con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"):
         n = con.execute(f"SELECT COUNT(*) FROM [{name}]").fetchone()[0]

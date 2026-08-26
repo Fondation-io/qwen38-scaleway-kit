@@ -17,7 +17,7 @@ import {
 } from "@/components/tool-uis/sql-tool";
 import {
   UserTimelineToolUI,
-  UsbActivityToolUI,
+  TransferSessionsToolUI,
   AfterHoursToolUI,
   OutliersToolUI,
 } from "@/components/tool-uis/chart-tool";
@@ -38,9 +38,9 @@ import {
 const config = AuiConfig({
   suggestions: Suggestions([
     "Décris les données disponibles",
-    "Qui s'est connecté entre 22h et 6h en octobre 2010 ?",
-    "Montre l'activité USB de AAM0658 en octobre-novembre 2010",
-    "Quels utilisateurs sont anormaux sur le flux USB ?",
+    "Quels profils portent une autorité spéciale (*ALLOBJ, *SECADM) ?",
+    "Montre les sessions de transfert du profil AAM0658 en octobre-novembre 2010",
+    "Y a-t-il des usurpations de profil (événement PS) dans les journaux ?",
   ]),
 });
 
@@ -71,7 +71,7 @@ export const Assistant = () => {
       <SqlQueryToolUI />
       <DescribeDataToolUI />
       <UserTimelineToolUI />
-      <UsbActivityToolUI />
+      <TransferSessionsToolUI />
       <AfterHoursToolUI />
       <OutliersToolUI />
       <SidebarProvider>

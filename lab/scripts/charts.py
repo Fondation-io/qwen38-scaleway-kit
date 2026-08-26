@@ -7,10 +7,10 @@ Sortie : PNG dans lab/output/ + résumé JSON sur stdout (pour que le
 chatbot commente le graphique).
 
 Usage CLI (miroir exact des tools exposés au modèle) :
-    charts.py user_timeline   --user AAM0658 [--start 2010-07-01 --end 2010-11-01]
-    charts.py usb_activity    --user AAM0658 [--start ... --end ...]
-    charts.py after_hours     [--start ... --end ...] [--top 15]
-    charts.py outliers        [--stream device] [--start ... --end ...] [--sigma 3]
+    charts.py user_timeline     --user AAM0658 [--start 2010-07-01 --end 2010-11-01]
+    charts.py transfer_sessions --user AAM0658 [--start ... --end ...]
+    charts.py after_hours       [--start ... --end ...] [--top 15]
+    charts.py outliers          [--stream transfer_session] [--start ... --end ...] [--sigma 3]
 
 Palette et règles : skill dataviz (couleurs validées CVD, un seul axe,
 marques fines, grille discrète, légende dès 2 séries).
@@ -34,6 +34,14 @@ OUT = Path(os.environ.get("CHARTS_OUT", LAB / "output"))
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # slots 1-4
 CRITICAL = "#d03b3b"   # statut réservé : fenêtre d'intrusion
 SURFACE, INK, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#898781", "#e1e0d9"
+
+# Vocabulaire IBM i exposé au modèle -> flux physique CERT sous-jacent.
+# http volontairement absent (pas de navigateur IBM i, cf. W1).
+IBMI_TO_CERT = {"signon": "logon", "mail": "email",
+                "transfer_session": "device", "object_transfer": "file"}
+CERT_LABEL = {"logon": "signon", "email": "mail SMTP",
+              "device": "session de transfert (ACS/FTP)",
+              "file": "transfert d'objet"}
 
 
 def style_axes(ax, title):
@@ -91,14 +99,14 @@ def user_timeline(con, args):
     """Activité quotidienne d'un utilisateur, une ligne par flux."""
     df = daily(con, args.user, args.start, args.end)
     fig, ax = plt.subplots(figsize=(9, 4))
-    streams = ["logon", "email", "http", "device"]  # ordre fixe = slots
+    streams = ["logon", "email", "device", "file"]  # ordre fixe = slots
     for i, s in enumerate(streams):
         sub = df[df["stream"] == s]
         if len(sub):
             ax.plot(sub["day"], sub["n_events"], color=SERIES[i],
-                    linewidth=2, label=s)
+                    linewidth=2, label=CERT_LABEL[s])
     win = insider_window(con, args.user)
-    style_axes(ax, f"Activité quotidienne — {args.user}")
+    style_axes(ax, f"Activité quotidienne — profil {args.user}")
     shade_window(ax, win)
     ax.legend(frameon=False, fontsize=8, labelcolor=INK)
     fig.autofmt_xdate(rotation=30)
@@ -108,8 +116,9 @@ def user_timeline(con, args):
         "insider": bool(win), "window": win})
 
 
-def usb_activity(con, args):
-    """Branchements USB par jour, moyenne de l'utilisateur en repère."""
+def transfer_sessions(con, args):
+    """Sessions de transfert réseau (ACS/FTP) par jour, moyenne du profil en
+    repère. Sous-jacent : flux 'device' (ouverture de session QZDASOINIT)."""
     df = daily(con, args.user, args.start, args.end)
     dev = df[df["stream"] == "device"]
     base = pd.read_sql(
@@ -124,12 +133,12 @@ def usb_activity(con, args):
     ax.axhline(mean, color=MUTED, linewidth=1, linestyle="--")
     ax.text(dev["day"].min() if len(dev) else 0, mean,
             f" moyenne {mean:.1f}", color=MUTED, fontsize=8, va="bottom")
-    style_axes(ax, f"Branchements USB par jour — {args.user}")
+    style_axes(ax, f"Sessions de transfert (ACS/FTP) par jour — profil {args.user}")
     shade_window(ax, insider_window(con, args.user))
     anomalies = dev[dev["n_events"] > thresh]
     fig.autofmt_xdate(rotation=30)
-    save(fig, f"usb_{args.user}", {
-        "tool": "usb_activity", "user": args.user, "mean": round(mean, 2),
+    save(fig, f"transfer_{args.user}", {
+        "tool": "transfer_sessions", "user": args.user, "mean": round(mean, 2),
         "threshold_3sigma": round(thresh, 2),
         "anomalous_days": anomalies["day"].dt.strftime("%Y-%m-%d").tolist()})
 
@@ -155,7 +164,7 @@ def after_hours(con, args):
     colors = [CRITICAL if u in insiders else SERIES[0] for u in df["user"]]
     ax.barh(df["user"][::-1], df["n"][::-1],
             color=colors[::-1], height=0.7)
-    style_axes(ax, "Connexions hors horaires (22h-6h) — top utilisateurs")
+    style_axes(ax, "Signons interactifs hors horaires (22h-6h) — top profils")
     ax.grid(True, axis="x", color=GRID, linewidth=0.6)
     ax.grid(False, axis="y")
     save(fig, "after_hours", {
@@ -164,12 +173,13 @@ def after_hours(con, args):
 
 
 def outliers(con, args):
-    """Jours anormaux (> moyenne + sigma·écart-type) sur un flux."""
+    """Jours anormaux (> moyenne + sigma·écart-type) sur un flux IBM i."""
+    cert_stream = IBMI_TO_CERT.get(args.stream, args.stream)
     df = pd.read_sql(
         "SELECT [user], day, n_events, mean_events, std_events "
         "FROM cert_daily_baseline WHERE stream=? "
         "AND n_events > mean_events + ? * std_events AND std_events > 0 "
-        "ORDER BY day", con, params=(args.stream, args.sigma))
+        "ORDER BY day", con, params=(cert_stream, args.sigma))
     df["day"] = pd.to_datetime(df["day"])
     if args.start:
         df = df[df["day"] >= pd.to_datetime(args.start)]
@@ -178,7 +188,7 @@ def outliers(con, args):
     perday = df.groupby("day").size()
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.plot(perday.index, perday.values, color=SERIES[0], linewidth=2)
-    style_axes(ax, f"Utilisateurs en anomalie par jour — flux {args.stream} "
+    style_axes(ax, f"Profils en anomalie par jour — {CERT_LABEL[cert_stream]} "
                    f"(> {args.sigma}σ)")
     insiders = {r[0] for r in con.execute(
         "SELECT [user] FROM cert_insiders WHERE dataset='4.2'")}
@@ -193,13 +203,13 @@ def outliers(con, args):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("tool", choices=["user_timeline", "usb_activity",
+    p.add_argument("tool", choices=["user_timeline", "transfer_sessions",
                                     "after_hours", "outliers"])
     p.add_argument("--user")
     p.add_argument("--start")
     p.add_argument("--end")
     p.add_argument("--top", type=int, default=15)
-    p.add_argument("--stream", default="device")
+    p.add_argument("--stream", default="transfer_session")
     p.add_argument("--sigma", type=float, default=3.0)
     args = p.parse_args()
     con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)

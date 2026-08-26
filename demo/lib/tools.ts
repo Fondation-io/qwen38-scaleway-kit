@@ -86,9 +86,9 @@ export const tools = {
 
   user_timeline: tool({
     description:
-      "Génère un graphique PNG de l'activité quotidienne d'un utilisateur (logon, email, http, device), avec la fenêtre d'intrusion surlignée si l'utilisateur est un insider confirmé. Retourne un résumé JSON et chartUrl.",
+      "Génère un graphique PNG de l'activité quotidienne d'un profil (signon, mail SMTP, sessions de transfert, transferts d'objet), avec la fenêtre d'intrusion surlignée si le profil est un insider confirmé. Retourne un résumé JSON et chartUrl.",
     inputSchema: z.object({
-      user: z.string().describe("Identifiant utilisateur, ex. AAM0658"),
+      user: z.string().describe("Profil utilisateur, ex. AAM0658"),
       start: dateSchema.describe("Date de début YYYY-MM-DD"),
       end: dateSchema.describe("Date de fin YYYY-MM-DD"),
     }),
@@ -101,17 +101,17 @@ export const tools = {
     },
   }),
 
-  usb_activity: tool({
+  transfer_sessions: tool({
     description:
-      "Génère un graphique PNG des branchements USB quotidiens d'un utilisateur, avec sa moyenne et le seuil moyenne + 3 écarts-types. Retourne un résumé JSON et chartUrl.",
+      "Génère un graphique PNG des sessions de transfert réseau (ACS/FTP, jobs QZDASOINIT) ouvertes par jour pour un profil, avec sa moyenne et le seuil moyenne + 3 écarts-types. Retourne un résumé JSON et chartUrl.",
     inputSchema: z.object({
-      user: z.string().describe("Identifiant utilisateur, ex. AAM0658"),
+      user: z.string().describe("Profil utilisateur, ex. AAM0658"),
       start: dateSchema.describe("Date de début YYYY-MM-DD"),
       end: dateSchema.describe("Date de fin YYYY-MM-DD"),
     }),
     execute: async ({ user, start, end }) => {
       try {
-        return await runChart("usb_activity", { user, start, end });
+        return await runChart("transfer_sessions", { user, start, end });
       } catch (error) {
         return safeError(error);
       }
@@ -120,7 +120,7 @@ export const tools = {
 
   after_hours: tool({
     description:
-      "Génère un graphique PNG du classement des utilisateurs les plus actifs en dehors des heures ouvrées. Retourne un résumé JSON et chartUrl.",
+      "Génère un graphique PNG du classement des profils avec le plus de signons interactifs en dehors des heures ouvrées. Retourne un résumé JSON et chartUrl.",
     inputSchema: z.object({
       start: dateSchema.describe("Date de début YYYY-MM-DD"),
       end: dateSchema.describe("Date de fin YYYY-MM-DD"),
@@ -143,12 +143,12 @@ export const tools = {
 
   outliers: tool({
     description:
-      "Génère un graphique PNG des jours anormaux (n_events > moyenne + sigma * écart-type) pour un flux donné (logon, email, http, device), et indique combien d'insiders confirmés sont détectés. Retourne un résumé JSON et chartUrl.",
+      "Génère un graphique PNG des jours anormaux (n_events > moyenne + sigma * écart-type) pour un flux IBM i donné (signon, mail, transfer_session, object_transfer), et indique combien d'insiders confirmés sont détectés. Retourne un résumé JSON et chartUrl.",
     inputSchema: z.object({
       stream: z
-        .enum(["logon", "email", "http", "device"])
+        .enum(["signon", "mail", "transfer_session", "object_transfer"])
         .optional()
-        .describe("Flux analysé (défaut device)"),
+        .describe("Flux analysé (défaut transfer_session)"),
       sigma: z
         .number()
         .min(1)

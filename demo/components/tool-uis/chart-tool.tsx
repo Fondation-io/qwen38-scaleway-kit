@@ -15,7 +15,7 @@ type UserTimelineResult = ChartResult & {
   window?: { start?: string; end?: string; scenario?: string | null };
 };
 
-type UsbActivityResult = ChartResult & {
+type TransferSessionsResult = ChartResult & {
   mean: number;
   threshold_3sigma: number;
   anomalous_days: string[];
@@ -130,10 +130,10 @@ export const UserTimelineToolUI = makeChartToolUI<UserTimelineResult>({
   },
 });
 
-export const UsbActivityToolUI = makeChartToolUI<UsbActivityResult>({
-  toolName: "usb_activity",
-  runningLabel: "Génération du graphique d'activité USB…",
-  alt: "Activité USB de l'utilisateur",
+export const TransferSessionsToolUI = makeChartToolUI<TransferSessionsResult>({
+  toolName: "transfer_sessions",
+  runningLabel: "Génération du graphique des sessions de transfert…",
+  alt: "Sessions de transfert réseau du profil",
   renderMeta: (result) => (
     <>
       <MetaItem label="Moyenne" value={result.mean.toFixed(2)} />
