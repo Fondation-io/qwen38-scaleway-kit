@@ -90,18 +90,9 @@ function traced<A>(
 }
 
 export function makeTools(ctx: ToolContext) {
+  // sql_query n'est PAS ici : c'est un tool CLIENT (composants/tool-uis/
+  // sql-approval.tsx) soumis à validation humaine avant exécution (gate HITL).
   return {
-    sql_query: tool({
-      description:
-        "Exécute une requête SQL en lecture seule (SELECT ou WITH) sur la base SQLite des événements de sécurité. Résultats plafonnés à 200 lignes.",
-      inputSchema: z.object({
-        sql: z.string().describe("Requête SQL (SELECT ou WITH ... SELECT)"),
-      }),
-      execute: traced(ctx, "sql_query", async ({ sql }: { sql: string }) =>
-        runQuery(sql),
-      ),
-    }),
-
     describe_data: tool({
       description:
         "Retourne le profil des données (table data_profile) : pour chaque colonne, nombre de lignes, valeurs distinctes, nulls, min/max et valeurs les plus fréquentes. Filtrable par table.",

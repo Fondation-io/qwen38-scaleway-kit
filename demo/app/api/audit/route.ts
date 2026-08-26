@@ -10,17 +10,30 @@ export async function GET(req: Request) {
   return Response.json(await readAudit(limit));
 }
 
+const CLIENT_TYPES = new Set(["client_error", "sql_approval"]);
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     traceId?: string;
+    type?: string;
     message?: string;
     stack?: string;
     url?: string;
+    decision?: string;
+    sql?: string;
   };
-  await audit(body.traceId ?? newTraceId(), "client_error", {
-    error: body.message ?? "unknown client error",
-    stack: body.stack,
-    url: body.url,
-  });
+  const type = CLIENT_TYPES.has(body.type ?? "") ? body.type! : "client_error";
+  if (type === "sql_approval") {
+    await audit(body.traceId ?? newTraceId(), "sql_approval", {
+      decision: body.decision,
+      sql: body.sql,
+    });
+  } else {
+    await audit(body.traceId ?? newTraceId(), "client_error", {
+      error: body.message ?? "unknown client error",
+      stack: body.stack,
+      url: body.url,
+    });
+  }
   return Response.json({ ok: true });
 }

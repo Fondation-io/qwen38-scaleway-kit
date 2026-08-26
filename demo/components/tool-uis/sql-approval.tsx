@@ -1,0 +1,179 @@
+"use client";
+
+import { makeAssistantTool } from "@assistant-ui/react";
+import { CheckIcon, XIcon, ShieldAlertIcon, Loader2Icon } from "lucide-react";
+import { useState } from "react";
+import { z } from "zod";
+import { ToolErrorBoundary } from "@/components/tool-uis/tool-error-boundary";
+
+type SqlResult =
+  | { columns: string[]; rows: unknown[][]; rowCount: number }
+  | { error: string }
+  | { rejected: true };
+
+const MAX_ROWS = 20;
+
+const formatCell = (v: unknown): string =>
+  v === null || v === undefined
+    ? "NULL"
+    : typeof v === "object"
+      ? JSON.stringify(v)
+      : String(v);
+
+function ResultView({ result }: { result: SqlResult }) {
+  if ("rejected" in result) {
+    return (
+      <p className="text-muted-foreground text-xs">
+        Requête refusée par l&apos;analyste — non exécutée.
+      </p>
+    );
+  }
+  if ("error" in result) {
+    return (
+      <p className="border-destructive/50 text-destructive rounded-md border p-2 text-xs">
+        Erreur : {result.error}
+      </p>
+    );
+  }
+  if (result.rowCount === 0) {
+    return <p className="text-muted-foreground text-xs">Aucune ligne renvoyée.</p>;
+  }
+  const rows = result.rows.slice(0, MAX_ROWS);
+  return (
+    <div className="overflow-x-auto rounded-md border">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-muted/50 border-b">
+            {result.columns.map((c) => (
+              <th
+                key={c}
+                className="text-muted-foreground px-2.5 py-1.5 text-start font-medium whitespace-nowrap"
+              >
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b last:border-b-0">
+              {row.map((cell, j) => (
+                <td key={j} className="px-2.5 py-1.5 whitespace-nowrap">
+                  {formatCell(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function logDecision(decision: string, sql: string) {
+  fetch("/api/audit", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "sql_approval", decision, sql }),
+  }).catch(() => {});
+}
+
+function SqlApprovalRender(props: {
+  args: { sql?: unknown };
+  result?: unknown;
+  addResult: (result: unknown) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const sql = typeof props.args?.sql === "string" ? props.args.sql : "";
+  const result = props.result as SqlResult | undefined;
+  const addResult = props.addResult as (r: SqlResult) => void;
+
+  const sqlBlock = (
+    <pre className="bg-muted/50 text-foreground/90 overflow-x-auto rounded-md p-2.5 font-mono text-xs whitespace-pre-wrap">
+      {sql || "(requête en préparation…)"}
+    </pre>
+  );
+
+  // Résultat déjà fourni : afficher requête + résultat, sans boutons.
+  if (result !== undefined) {
+    return (
+      <ToolErrorBoundary toolName="sql_query">
+        <div className="my-2 flex flex-col gap-2 rounded-lg border p-3">
+          <span className="text-muted-foreground text-xs font-medium">
+            Requête SQL (validée)
+          </span>
+          {sqlBlock}
+          <ResultView result={result} />
+        </div>
+      </ToolErrorBoundary>
+    );
+  }
+
+  const approve = async () => {
+    if (busy || !sql) return;
+    setBusy(true);
+    logDecision("approved", sql);
+    try {
+      const res = await fetch("/api/sql", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sql }),
+      });
+      addResult((await res.json()) as SqlResult);
+    } catch (e) {
+      addResult({ error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const reject = () => {
+    if (busy) return;
+    logDecision("rejected", sql);
+    addResult({ rejected: true });
+  };
+
+  return (
+    <div className="border-amber-500/40 bg-amber-500/5 my-2 flex flex-col gap-2 rounded-lg border p-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-500">
+        <ShieldAlertIcon className="size-4" />
+        Validation requise — accès à la base d&apos;audit
+      </div>
+      <p className="text-muted-foreground text-xs">
+        L&apos;agent demande à exécuter cette requête en lecture seule. Approuvez
+        pour l&apos;exécuter, refusez pour la bloquer.
+      </p>
+      {sqlBlock}
+      <div className="flex gap-2">
+        <button
+          onClick={approve}
+          disabled={busy || !sql}
+          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2Icon className="size-3.5 animate-spin" />
+          ) : (
+            <CheckIcon className="size-3.5" />
+          )}
+          Approuver
+        </button>
+        <button
+          onClick={reject}
+          disabled={busy}
+          className="border-border text-foreground hover:bg-muted inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+        >
+          <XIcon className="size-3.5" />
+          Refuser
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export const SqlApprovalTool = makeAssistantTool({
+  toolName: "sql_query",
+  description:
+    "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i. La requête est soumise à validation humaine avant exécution : formule une requête claire et autoportante.",
+  parameters: z.object({
+    sql: z.string().describe("Requête SQL (SELECT ou WITH ... SELECT)"),
+  }),
+  render: SqlApprovalRender,
+});

@@ -15,6 +15,7 @@ export type AuditType =
   | "tool_error"
   | "stream_error"
   | "client_error"
+  | "sql_approval"
   | "process_error";
 
 export interface AuditEvent {

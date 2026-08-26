@@ -11,10 +11,8 @@ import {
 } from "@assistant-ui/react-ai-sdk";
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "@/components/assistant-ui/thread";
-import {
-  SqlQueryToolUI,
-  DescribeDataToolUI,
-} from "@/components/tool-uis/sql-tool";
+import { DescribeDataToolUI } from "@/components/tool-uis/sql-tool";
+import { SqlApprovalTool } from "@/components/tool-uis/sql-approval";
 import {
   UserTimelineToolUI,
   TransferSessionsToolUI,
@@ -69,7 +67,7 @@ export const Assistant = () => {
 
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
-      <SqlQueryToolUI />
+      <SqlApprovalTool />
       <DescribeDataToolUI />
       <UserTimelineToolUI />
       <TransferSessionsToolUI />
