@@ -73,7 +73,7 @@ export async function POST(req: Request) {
         ...frontendTools(clientTools ?? {}),
         ...makeTools({ traceId }),
       },
-      stopWhen: stepCountIs(8),
+      stopWhen: stepCountIs(30),
       onError: ({ error }) => {
         void audit(traceId, "stream_error", {
           phase: "generation",
