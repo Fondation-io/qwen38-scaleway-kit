@@ -3,6 +3,7 @@
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Loader2Icon } from "lucide-react";
 import type { FC, ReactNode } from "react";
+import { ToolErrorBoundary } from "@/components/tool-uis/tool-error-boundary";
 
 type ChartResult = {
   chartUrl: string;
@@ -82,19 +83,21 @@ const makeChartToolUI = <TResult extends ChartResult>(options: {
       if (!result?.chartUrl) return null;
 
       return (
-        <div className="my-2 flex flex-col gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={result.chartUrl}
-            alt={options.alt}
-            className="w-full rounded-lg border"
-          />
-          {options.renderMeta && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              {options.renderMeta(result)}
-            </div>
-          )}
-        </div>
+        <ToolErrorBoundary toolName={options.toolName}>
+          <div className="my-2 flex flex-col gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={result.chartUrl}
+              alt={options.alt}
+              className="w-full rounded-lg border"
+            />
+            {options.renderMeta && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                {options.renderMeta(result)}
+              </div>
+            )}
+          </div>
+        </ToolErrorBoundary>
       );
     },
   });

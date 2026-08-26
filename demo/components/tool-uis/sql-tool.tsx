@@ -3,6 +3,7 @@
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { Loader2Icon } from "lucide-react";
 import type { FC } from "react";
+import { ToolErrorBoundary } from "@/components/tool-uis/tool-error-boundary";
 
 type SqlToolArgs = {
   sql?: string;
@@ -117,6 +118,7 @@ const makeSqlToolUI = (options: {
       if (!result) return null;
 
       return (
+        <ToolErrorBoundary toolName={options.toolName}>
         <div className="my-2 flex flex-col gap-2 rounded-lg border p-3">
           {options.collapsedSql ? (
             <details>
@@ -143,6 +145,7 @@ const makeSqlToolUI = (options: {
             <ResultTable result={result} />
           )}
         </div>
+        </ToolErrorBoundary>
       );
     },
   });

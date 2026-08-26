@@ -7,9 +7,11 @@ import {
   stepCountIs,
   type UIMessage,
 } from "ai";
-import { tools } from "@/lib/tools";
+import { makeTools } from "@/lib/tools";
+import { audit, newTraceId } from "@/lib/audit";
 
 export const maxDuration = 300;
+export const runtime = "nodejs";
 
 const SYSTEM_PROMPT = `Tu es un analyste sécurité IBM i (AS/400) assistant un SOC. Tu explores une base SQLite en lecture seule qui expose une activité d'audit dans le vocabulaire du journal QAUDJRN. Les données sous-jacentes viennent du jeu CERT Insider Threat r4.2 (~1000 profils utilisateur), retranscrites en événements IBM i.
 
@@ -45,35 +47,64 @@ const vllm = createOpenAICompatible({
 });
 
 export async function POST(req: Request) {
-  const {
-    messages,
-    tools: clientTools,
-  }: {
-    messages: UIMessage[];
-    system?: string;
-    tools?: Record<string, { description?: string; parameters: JSONSchema7 }>;
-  } = await req.json();
+  const traceId = newTraceId();
+  try {
+    const {
+      messages,
+      tools: clientTools,
+    }: {
+      messages: UIMessage[];
+      system?: string;
+      tools?: Record<string, { description?: string; parameters: JSONSchema7 }>;
+    } = await req.json();
 
-  const result = streamText({
-    model: vllm(process.env.VLLM_MODEL ?? ""),
-    system: SYSTEM_PROMPT,
-    messages: await convertToModelMessages(messages),
-    tools: {
-      ...frontendTools(clientTools ?? {}),
-      ...tools,
-    },
-    stopWhen: stepCountIs(8),
-    providerOptions: {
-      // Passé tel quel dans le body de la requête OpenAI-compatible :
-      // désactive le raisonnement Qwen3 (template chat vLLM).
-      vllm: {
-        chat_template_kwargs: { enable_thinking: false },
+    await audit(traceId, "request", {
+      model: process.env.VLLM_MODEL,
+      messageCount: Array.isArray(messages) ? messages.length : 0,
+    });
+
+    const result = streamText({
+      model: vllm(process.env.VLLM_MODEL ?? ""),
+      system: SYSTEM_PROMPT,
+      messages: await convertToModelMessages(messages),
+      tools: {
+        ...frontendTools(clientTools ?? {}),
+        ...makeTools({ traceId }),
       },
-    },
-  });
+      stopWhen: stepCountIs(8),
+      onError: ({ error }) => {
+        void audit(traceId, "stream_error", {
+          phase: "generation",
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      },
+      providerOptions: {
+        // Passé tel quel dans le body de la requête OpenAI-compatible :
+        // désactive le raisonnement Qwen3 (template chat vLLM).
+        vllm: {
+          chat_template_kwargs: { enable_thinking: false },
+        },
+      },
+    });
 
-  return result.toUIMessageStreamResponse({
-    onError: (error) =>
-      error instanceof Error ? error.message : String(error),
-  });
+    return result.toUIMessageStreamResponse({
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        void audit(traceId, "stream_error", { phase: "stream", error: message });
+        return message;
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await audit(traceId, "stream_error", {
+      phase: "request",
+      error: message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
 }

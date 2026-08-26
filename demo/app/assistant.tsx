@@ -27,6 +27,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
+import { AuditLog } from "@/components/audit-log";
 import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
@@ -90,6 +91,7 @@ export const Assistant = () => {
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
+              <AuditLog />
             </header>
             <div className="flex-1 overflow-hidden">
               <Thread components={{ Welcome }} />
