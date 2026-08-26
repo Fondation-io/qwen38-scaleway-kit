@@ -12,19 +12,19 @@ import { Parser } from "node-sql-parser";
 const parser = new Parser();
 const OPT = { database: "sqlite" } as const;
 
-// Seules ces vues/tables sont interrogeables par l'agent. Les tables CERT
-// brutes (cert_logon/device/email/file/http) sont hors périmètre : l'agent
-// passe par les vues IBM i v_qaudjrn_*.
+// Seules ces vues/tables sont interrogeables par l'agent (comparaison
+// insensible à la casse — SQLite l'est). Les tables CERT brutes
+// (cert_logon/device/email/file/http) sont hors périmètre : l'agent passe par
+// les vues Db2 for i (schéma SECAUDIT).
 const ALLOWED_TABLES = new Set([
-  "v_qaudjrn_signon",
-  "v_qaudjrn_transfer",
-  "v_qaudjrn_object",
-  "v_qaudjrn_mail",
-  "v_qaudjrn_profile_swap",
-  "v_profiles",
-  "v_daily_baseline",
+  "qaudjrn_signon",
+  "qaudjrn_transfer",
+  "qaudjrn_object",
+  "qaudjrn_mail",
+  "qaudjrn_profile_swap",
+  "user_profiles",
+  "daily_baseline",
   "cert_insiders",
-  "cert_daily_baseline",
   "data_profile",
   "guide_evidence",
 ]);
@@ -95,7 +95,7 @@ export function guardSql(sql: string): GuardVerdict {
         reason: `Accès '${authority}' sur ${table} interdit (lecture seule).`,
       };
     if (cteNames.has(table)) continue;
-    if (!ALLOWED_TABLES.has(table))
+    if (!ALLOWED_TABLES.has(table.toLowerCase()))
       return {
         ok: false,
         parsed: true,

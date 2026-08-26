@@ -39,9 +39,9 @@ import {
 const config = AuiConfig({
   suggestions: Suggestions([
     "Décris les données disponibles",
-    "Quels profils portent une autorité spéciale (*ALLOBJ, *SECADM) ?",
+    "Quels profils portent *ALLOBJ dans SECAUDIT.USER_PROFILES ?",
     "Montre les sessions de transfert du profil AAM0658 en octobre-novembre 2010",
-    "Y a-t-il des usurpations de profil (événement PS) dans les journaux ?",
+    "Y a-t-il des usurpations de profil (PS) dans SECAUDIT.QAUDJRN_PROFILE_SWAP ?",
   ]),
 });
 

@@ -194,9 +194,10 @@ def build_ibmi(con):
     n_ps = con.execute("SELECT COUNT(*) FROM ibmi_profile_swap").fetchone()[0]
     print(f"  ibmi_profile_swap: {n_ps} événements PS", flush=True)
 
-    # 3. Vues QAUDJRN (vocabulaire IBM i). cert_http volontairement non exposé.
+    # 3. Vues QAUDJRN en style Db2 for i (schéma/bibliothèque SECAUDIT attaché
+    # côté app). cert_http volontairement non exposé.
     views = {
-        "v_profiles": """
+        "USER_PROFILES": """
             SELECT u.user_id AS user_profile, u.employee_name, u.email, u.role,
                    u.business_unit, u.functional_unit, u.department, u.team,
                    u.supervisor,
@@ -205,7 +206,7 @@ def build_ibmi(con):
             LEFT JOIN ibmi_user_authorities a ON a.user_profile = u.user_id
         """,
         # cert_logon -> signon interactif 5250 / démarrage de job (JS)
-        "v_qaudjrn_signon": """
+        "QAUDJRN_SIGNON": """
             SELECT id, date AS timestamp, [user] AS user_profile,
                    pc AS system, 'JS' AS entry_type,
                    CASE activity WHEN 'Logon' THEN 'signon'
@@ -214,7 +215,7 @@ def build_ibmi(con):
         """,
         # cert_device -> ouverture/fermeture d'une session de transfert réseau
         # (Data Transfer ACS / FTP, job QZDASOINIT)
-        "v_qaudjrn_transfer": """
+        "QAUDJRN_TRANSFER": """
             SELECT id, date AS timestamp, [user] AS user_profile,
                    pc AS system, 'QZDASOINIT' AS job_name, 'SO' AS entry_type,
                    'ACS/FTP' AS channel,
@@ -225,23 +226,23 @@ def build_ibmi(con):
         """,
         # cert_file -> objet Db2/IFS transféré hors système (ZR : audité
         # seulement si l'audit objet est actif, cf. F4)
-        "v_qaudjrn_object": """
+        "QAUDJRN_OBJECT": """
             SELECT id, date AS timestamp, [user] AS user_profile,
                    pc AS system, 'ZR' AS entry_type,
                    filename AS object_name, content AS object_preview
             FROM cert_file
         """,
         # cert_email -> distribution SMTP sortante (ML)
-        "v_qaudjrn_mail": """
+        "QAUDJRN_MAIL": """
             SELECT id, date AS timestamp, [user] AS user_profile,
                    pc AS system, 'ML' AS entry_type,
                    [to] AS recipients, [from] AS sender, size,
                    attachments, content
             FROM cert_email
         """,
-        "v_qaudjrn_profile_swap": "SELECT * FROM ibmi_profile_swap",
+        "QAUDJRN_PROFILE_SWAP": "SELECT * FROM ibmi_profile_swap",
         # baseline quotidienne renommée en vocabulaire IBM i, http retiré
-        "v_daily_baseline": """
+        "DAILY_BASELINE": """
             SELECT [user] AS user_profile, day, n_events, mean_events,
                    std_events,
                    CASE stream WHEN 'logon'  THEN 'signon'

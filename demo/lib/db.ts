@@ -17,6 +17,15 @@ function getDb(): DatabaseSync {
     } catch {
       // best-effort
     }
+    // Attache la même base sous l'alias SECAUDIT (lecture seule) : les vues
+    // sont alors adressables en Db2 for i qualifié, ex. SECAUDIT.QAUDJRN_TRANSFER.
+    try {
+      handle.exec(
+        `ATTACH DATABASE 'file:${path}?mode=ro' AS SECAUDIT`,
+      );
+    } catch {
+      // best-effort : les noms non qualifiés restent disponibles
+    }
     db = handle;
   }
   return db;
