@@ -15,6 +15,13 @@ type SqlToolResult = {
   rowCount: number;
 };
 
+type SqlToolError = { error: string };
+
+type SqlToolOutput = SqlToolResult | SqlToolError;
+
+const isError = (r: SqlToolOutput): r is SqlToolError =>
+  r != null && "error" in r;
+
 const MAX_DISPLAYED_ROWS = 20;
 
 const formatCell = (value: unknown): string => {
@@ -80,7 +87,7 @@ const makeSqlToolUI = (options: {
   summaryLabel: string;
   collapsedSql?: boolean;
 }) =>
-  makeAssistantToolUI<SqlToolArgs, SqlToolResult>({
+  makeAssistantToolUI<SqlToolArgs, SqlToolOutput>({
     toolName: options.toolName,
     render: ({ args, result, status }) => {
       const sqlText =
@@ -128,7 +135,13 @@ const makeSqlToolUI = (options: {
               <SqlText sql={sqlText} />
             </>
           )}
-          <ResultTable result={result} />
+          {isError(result) ? (
+            <p className="border-destructive/50 text-destructive rounded-md border p-2 text-xs">
+              Erreur : {result.error}
+            </p>
+          ) : (
+            <ResultTable result={result} />
+          )}
         </div>
       );
     },

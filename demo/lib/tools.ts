@@ -42,7 +42,9 @@ async function runChart(toolName: string, args: ChartArgs) {
 }
 
 function safeError(error: unknown) {
-  return { error: error instanceof Error ? error.message : String(error) };
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("[tool-error]", message);
+  return { error: message };
 }
 
 export const tools = {
