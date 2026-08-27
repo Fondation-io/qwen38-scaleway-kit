@@ -31,6 +31,23 @@ function sqlHeaders(): Record<string, string> {
 }
 
 const MAX_ROWS = 20;
+// Plafond du résultat RENVOYÉ AU MODÈLE (indépendant de l'affichage). Garde-fou
+// contre le débordement de contexte sur une investigation profonde. On borne par
+// NOMBRE de lignes (200, = plafond serveur) ET par TAILLE sérialisée : les lignes
+// de détail larges (pot de miel : IP, ports, messages) remplissent vite le
+// contexte ; les agrégats étroits gardent leurs 200 lignes. rowCount reste vrai.
+const MAX_MODEL_ROWS = 200;
+const MAX_MODEL_CHARS = 6000;
+
+function capForModel(r: SqlResult): SqlResult {
+  if (!("rows" in r) || !Array.isArray(r.rows)) return r;
+  let rows = r.rows.slice(0, MAX_MODEL_ROWS);
+  // Réduit tant que la sérialisation dépasse le budget (garde ≥ 5 lignes).
+  while (rows.length > 5 && JSON.stringify(rows).length > MAX_MODEL_CHARS) {
+    rows = rows.slice(0, Math.ceil(rows.length * 0.7));
+  }
+  return rows.length === r.rows.length ? r : { ...r, rows };
+}
 
 const formatCell = (v: unknown): string =>
   v === null || v === undefined
@@ -178,7 +195,7 @@ function SqlApprovalRender(props: {
           // le modèle propose une alternative (agrégat).
           addResult({ blocked: true, reason: data.reason });
         } else {
-          addResult(data as SqlResult);
+          addResult(capForModel(data as SqlResult));
         }
       } catch (e) {
         addResult({ error: e instanceof Error ? e.message : String(e) });
@@ -226,7 +243,7 @@ function SqlApprovalRender(props: {
     setBusy(true);
     logDecision("approved", sql);
     try {
-      addResult(await runSql(true));
+      addResult(capForModel(await runSql(true)));
     } catch (e) {
       addResult({ error: e instanceof Error ? e.message : String(e) });
     }

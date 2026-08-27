@@ -29,7 +29,21 @@ const ALLOWED_TABLES = new Set([
   "cert_insiders",
   "data_profile",
   "guide_evidence",
+  // Base pot de miel IBM i (schéma HONEYPOT) — journal QAUDJRN brut.
+  "qaudjrn_pw",
+  "qaudjrn_sk",
+  "qaudjrn_im",
 ]);
+
+// Aide renvoyée dans les erreurs « hors périmètre » : sans catalogue interrogeable,
+// un agent qui tente QSYS2.SYSTABLES ou sqlite_master boucle. On lui donne
+// directement la liste des objets à interroger.
+const AVAILABLE_OBJECTS =
+  "Il n'y a PAS de catalogue système interrogeable (ni QSYS2.SYSTABLES ni sqlite_master). " +
+  "Interroge directement ces objets : SECAUDIT.QAUDJRN_SIGNON, SECAUDIT.QAUDJRN_TRANSFER, " +
+  "SECAUDIT.QAUDJRN_OBJECT, SECAUDIT.QAUDJRN_MAIL, SECAUDIT.QAUDJRN_PROFILE_SWAP, " +
+  "SECAUDIT.USER_PROFILES, SECAUDIT.DAILY_BASELINE, HONEYPOT.qaudjrn_pw, HONEYPOT.qaudjrn_sk, " +
+  "HONEYPOT.qaudjrn_im, guide_evidence, cert_insiders, data_profile.";
 
 // Normalise les quelques constructs Db2 for i qui divergent de SQLite, AVANT
 // le parsing/exécution. L'agent écrit du Db2 authentique (ex. FETCH FIRST) ;
@@ -184,16 +198,27 @@ export function assessRisk(sql: string, policy?: ProfilePolicy): RiskVerdict {
 }
 
 // Repli quand le parser échoue : gardes conservatrices et restrictives.
+// Neutralise le contenu des littéraux chaîne ('...' avec échappement '', "...")
+// avant les vérifications regex : sinon un point-virgule ou un mot-clé DANS une
+// chaîne (ex. STRING_AGG(x, '; ')) déclenche un faux positif « multi-instruction ».
+function stripStringLiterals(sql: string): string {
+  return sql
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/"(?:[^"]|"")*"/g, '""');
+}
+
 function conservativeFallback(sql: string): GuardVerdict {
   const text = sql.trim().replace(/;\s*$/, "");
-  if (text.includes(";"))
+  // Les gardes structurelles s'appliquent au SQL SANS le contenu des chaînes.
+  const bare = stripStringLiterals(text);
+  if (bare.includes(";"))
     return { ok: false, parsed: false, reason: "Une seule instruction SQL autorisée." };
   if (!/^(SELECT|WITH)\b/i.test(text))
     return { ok: false, parsed: false, reason: "Lecture seule (SELECT ou WITH)." };
-  if (FORBIDDEN.test(text))
+  if (FORBIDDEN.test(bare))
     return { ok: false, parsed: false, reason: "Mot-clé interdit (écriture/PRAGMA/ATTACH…)." };
-  if (BLOCKED_IDENTIFIERS.test(text))
-    return { ok: false, parsed: false, reason: "Table hors périmètre ou introspection SQLite." };
+  if (BLOCKED_IDENTIFIERS.test(bare))
+    return { ok: false, parsed: false, reason: `Table hors périmètre ou introspection. ${AVAILABLE_OBJECTS}` };
   return { ok: true, parsed: false };
 }
 
@@ -247,7 +272,7 @@ export function guardSql(sql: string, _policy?: ProfilePolicy): GuardVerdict {
       return {
         ok: false,
         parsed: true,
-        reason: `Table/vue hors périmètre : ${table}.`,
+        reason: `Table/vue hors périmètre : ${table}. ${AVAILABLE_OBJECTS}`,
       };
   }
   return { ok: true, parsed: true };

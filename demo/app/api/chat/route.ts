@@ -5,11 +5,14 @@ import {
   type JSONValue,
   streamText,
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   stepCountIs,
   type UIMessage,
 } from "ai";
 import { makeTools } from "@/lib/tools";
 import { getProfile, type Profile } from "@/lib/profiles";
+import { getModel } from "@/lib/models";
 import { audit, newTraceId } from "@/lib/audit";
 
 export const maxDuration = 300;
@@ -29,7 +32,13 @@ VUES Db2 for i — schéma SECAUDIT (nomme-les qualifiées, ex. SECAUDIT.QAUDJRN
 
 Autre jeu (incidents SOC génériques) :
 - guide_evidence : 45 colonnes Microsoft, 13,7 M lignes. Toujours filtrer sur les colonnes indexées (IncidentId, Category, IncidentGrade, EntityType). Éviter les agrégations pleine table.
-- data_profile(table_name, column_name, n_rows, n_distinct, n_null, min_value, max_value, top_values) : profil de chaque colonne.
+- data_profile(table_name, column_name, n_rows, n_distinct, n_null, min_value, max_value, top_values) : profil de chaque colonne (couvre les jeux SECAUDIT et guide_evidence, PAS le pot de miel).
+
+BASE POT DE MIEL IBM i (schéma HONEYPOT) — journal QAUDJRN BRUT d'un serveur IBM i réel exposé sur Internet, sur ~3 mois. Enregistre les événements de sécurité, enrichis (préfixes event_/host_/job_/pgm_). Trois tables, une par type d'entrée QAUDJRN — interroge-les DIRECTEMENT (pas de vue) en qualifiant HONEYPOT.<table> :
+- HONEYPOT.qaudjrn_pw : entrées PW (échecs d'authentification). Colonnes utiles : ibm_timestamp, user_name, remote_ip, remote_port, type_violation, job_name, event_outcome, event_risk_score_norm, message, event_kind.
+- HONEYPOT.qaudjrn_sk : entrées SK (connexions socket). Colonnes utiles : ibm_timestamp, remote_ip, remote_port, local_ip, local_port, type_sk, event_outcome, format_ip.
+- HONEYPOT.qaudjrn_im : entrées IM (Intrusion Monitor / IDS). Colonnes utiles : ibm_timestamp, remote_ip, remote_port, local_port, type_im, probe, message, event_risk_score_norm, event_kind.
+Les trois tables partagent le même socle de colonnes d'enrichissement. Les timestamps ibm_timestamp sont au format ISO 'YYYY-MM-DD HH:MM:SS.ffffff'. describe_data ne couvre PAS ces tables : explore-les au SQL (DISTINCT, COUNT, GROUP BY). Accès : les profils SOC peuvent lire cette base (junior = agrégats seuls ; senior/rssi/allobj = détail).
 
 Contexte sécurité IBM i à appliquer :
 - POINT AVEUGLE MAJEUR : sur IBM i, la LECTURE d'un objet (un download, un SELECT) n'est journalisée en 'ZR' que si l'audit objet est activé sur cet objet — ce qui est rarement le cas. L'exfiltration principale est donc souvent INVISIBLE. Détecte-la via les signaux périphériques : sessions de transfert (SECAUDIT.QAUDJRN_TRANSFER), volumes anormaux vs la baseline du profil, horaires, autorités spéciales, usurpation de profil.
@@ -46,7 +55,10 @@ Règles :
 - Les timestamps des vues QAUDJRN_* sont du texte au format MM/DD/YYYY HH:MM:SS — pour les analyses temporelles, préférer SECAUDIT.DAILY_BASELINE (dates ISO).
 - Base en LECTURE SEULE : uniquement des SELECT sur les vues du schéma SECAUDIT (et cert_insiders). Toute écriture ou table hors périmètre est refusée par la gate.
 - L'outil sql_query applique une gate d'approbation CONDITIONNELLE : les requêtes d'agrégation/comptage s'exécutent directement ; celles qui lisent du contenu sensible en clair (corps de mail, objets exfiltrés, destinataires, pièces jointes) sans agrégation sont soumises à validation de l'analyste avant exécution. Privilégie les agrégats. Si une requête sensible est refusée, n'insiste pas : propose une alternative agrégée ou explique ce que tu cherchais.
-- Pour toute question sur la nature/volumétrie des données, utiliser describe_data avant d'écrire du SQL.
+- N'annonce JAMAIS une requête, une correction ou une prochaine étape sans l'exécuter dans le MÊME tour : si tu dis « je corrige », « laisse-moi vérifier », « je vais recalculer », tu DOIS appeler sql_query immédiatement. Ne termine jamais ta réponse sur une simple intention — soit tu appelles un outil, soit tu conclus avec un verdict.
+- N'interroge JAMAIS un catalogue système (QSYS2.SYSTABLES, SYSCOLUMNS, sqlite_master…) : il n'est pas accessible. Les tables/vues disponibles sont celles décrites ci-dessus — interroge-les directement (SELECT … FROM SECAUDIT.QAUDJRN_MAIL, HONEYPOT.qaudjrn_pw, …).
+- Si une requête est REFUSÉE par la gate ou échoue, NE la relance JAMAIS à l'identique : lis le message d'erreur, corrige (ou change d'approche). Deux échecs identiques d'affilée = arrête et explique.
+- describe_data (data_profile) ne profile QUE les tables cert_* et guide_evidence. Les vues SECAUDIT.* et les tables HONEYPOT.* n'y sont PAS : n'appelle PAS describe_data dessus (il renvoie vide) — interroge-les directement (COUNT(*), DISTINCT, GROUP BY) pour connaître volumes et valeurs.
 - Quand une visualisation aide, préférer les tools graphiques (user_timeline, transfer_sessions, after_hours, outliers) à sql_query. Dates de ces tools au format YYYY-MM-DD.
 - Les résultats SQL sont plafonnés à 200 lignes : agréger plutôt que lister.
 - Réponds en français, de façon concise et factuelle, dans le vocabulaire IBM i (profil, session de transfert, objet, autorité spéciale). Cite les chiffres exacts retournés par les tools.`;
@@ -83,14 +95,25 @@ function profileBlock(profile: Profile): string {
   return lines.join("\n");
 }
 
-const vllm = createOpenAICompatible({
-  name: "vllm",
-  baseURL: process.env.VLLM_BASE_URL ?? "",
-  apiKey: process.env.VLLM_API_KEY,
-  // Demande stream_options.include_usage : sans quoi vLLM n'émet pas l'usage
-  // (tokens) dans le chunk final en streaming, et le pied de métriques reste vide.
-  includeUsage: true,
-});
+// Résout le provider/modèle actif (header x-demo-model) → client OpenAI-compatible.
+// vLLM est un provider parmi d'autres (baseURL via env), NEAR AI en est un autre
+// (baseURL littérale, clé NEAR_AI_API_KEY). Le nom passé à createOpenAICompatible
+// sert de clé à providerOptions (cf. thinkingOptions).
+function resolveModel(req: Request) {
+  const entry = getModel(req.headers.get("x-demo-model"));
+  const baseURL =
+    entry.baseUrl ??
+    (entry.baseUrlEnv ? process.env[entry.baseUrlEnv] : undefined) ??
+    "";
+  const client = createOpenAICompatible({
+    name: entry.provider,
+    baseURL,
+    apiKey: process.env[entry.apiKeyEnv],
+    // include_usage : nécessaire pour que l'usage (tokens) arrive au client.
+    includeUsage: true,
+  });
+  return { entry, model: client(entry.model) };
+}
 
 // Options vLLM du niveau de réflexion (header `x-demo-thinking`). `off` coupe le
 // raisonnement via le template chat ; les autres crans mappent sur les
@@ -134,18 +157,27 @@ export async function POST(req: Request) {
     // Profil actif (header propagé par le client). Détermine le bloc
     // d'autorisations injecté dans le prompt système.
     const profile = getProfile(req.headers.get("x-demo-profile"));
+    // Provider/modèle actif (header x-demo-model) : vLLM souverain, NEAR AI TEE…
+    const { entry, model } = resolveModel(req);
 
     await audit(traceId, "request", {
-      model: process.env.VLLM_MODEL,
+      model: `${entry.provider}:${entry.model}`,
       profile: profile.id,
       messageCount: Array.isArray(messages) ? messages.length : 0,
     });
 
     const system = `${SYSTEM_PROMPT}\n\n${profileBlock(profile)}`;
 
+    // Pour les modèles TEE : on capture l'id de complétion du provider (dernier
+    // step = réponse finale) afin de récupérer la signature d'attestation côté client.
+    let teeChatId: string | undefined;
+
     const result = streamText({
-      model: vllm(process.env.VLLM_MODEL ?? ""),
+      model,
       system,
+      onStepFinish: ({ response }) => {
+        if (entry.tee && response?.id) teeChatId = response.id;
+      },
       messages: await convertToModelMessages(messages),
       tools: {
         ...frontendTools(clientTools ?? {}),
@@ -159,23 +191,42 @@ export async function POST(req: Request) {
           stack: error instanceof Error ? error.stack : undefined,
         });
       },
-      providerOptions: {
-        vllm: thinkingOptions(req.headers.get("x-demo-thinking")),
-      },
+      // Réflexion pilotable seulement pour les modèles Qwen (chat_template_kwargs) ;
+      // DeepSeek/GLM (Baseten) gèrent leur raisonnement autrement → rien à injecter.
+      // La clé de providerOptions doit correspondre au `name` du provider.
+      providerOptions: entry.qwenThinking
+        ? { [entry.provider]: thinkingOptions(req.headers.get("x-demo-thinking")) }
+        : undefined,
     });
 
-    return result.toUIMessageStreamResponse({
-      // Émet l'usage (tokens) vers le client au `finish` : sinon le flux ne le
-      // porte pas et le pied de métriques par message reste vide. assistant-ui
-      // lit `metadata.usage` (cf. getThreadMessageTokenUsage).
-      messageMetadata: ({ part }) =>
-        part.type === "finish" ? { usage: part.totalUsage } : undefined,
+    // On enveloppe le flux pour pouvoir émettre, APRÈS génération, une part
+    // `data-tee` : la messageMetadata AI SDK n'est pas propagée jusqu'à la
+    // metadata client par le transport assistant-ui, alors qu'une part `data-*`
+    // devient une part de contenu lisible (cf. convertMessage). C'est ainsi qu'on
+    // transmet le chatId nécessaire à la signature d'attestation TEE.
+    const uiStream = createUIMessageStream({
+      execute: async ({ writer }) => {
+        writer.merge(
+          result.toUIMessageStream({
+            messageMetadata: ({ part }) =>
+              part.type === "finish" ? { usage: part.totalUsage } : undefined,
+          }),
+        );
+        await result.finishReason; // attend la fin (teeChatId posé par onStepFinish)
+        if (entry.tee && teeChatId) {
+          writer.write({
+            type: "data-tee",
+            data: { chatId: teeChatId, modelId: entry.id },
+          });
+        }
+      },
       onError: (error) => {
         const message = error instanceof Error ? error.message : String(error);
         void audit(traceId, "stream_error", { phase: "stream", error: message });
         return message;
       },
     });
+    return createUIMessageStreamResponse({ stream: uiStream });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await audit(traceId, "stream_error", {

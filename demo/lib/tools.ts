@@ -109,9 +109,18 @@ export function makeTools(ctx: ToolContext) {
           const where = table
             ? ` WHERE table_name = '${table.replace(/'/g, "''")}'`
             : "";
-          return runQuery(
+          const res = runQuery(
             `SELECT table_name, column_name, n_rows, n_distinct, n_null, min_value, max_value, top_values FROM data_profile${where}`,
           );
+          // data_profile ne couvre QUE cert_* et guide_evidence. Pour une table
+          // non profilée (vues SECAUDIT.*, tables HONEYPOT.*), on renvoie un indice
+          // actionnable au lieu d'un résultat vide qui fait boucler l'agent.
+          if (res.rowCount === 0) {
+            return {
+              note: `Aucun profil pour "${table ?? "(toutes)"}". describe_data ne couvre QUE cert_* et guide_evidence. Les vues SECAUDIT.* (QAUDJRN_SIGNON/TRANSFER/OBJECT/MAIL/PROFILE_SWAP, USER_PROFILES, DAILY_BASELINE) et les tables HONEYPOT.* (qaudjrn_pw/sk/im) NE SONT PAS profilées : interroge-les DIRECTEMENT au SQL (COUNT(*), DISTINCT, GROUP BY), n'appelle pas describe_data dessus.`,
+            };
+          }
+          return res;
         },
       ),
     }),

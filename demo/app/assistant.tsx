@@ -14,8 +14,10 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ProfileProvider, useProfile, getActiveProfileId } from "@/app/runtime/profile-context";
 import { ReasoningProvider, getReasoningMode } from "@/app/runtime/reasoning-context";
+import { ModelProvider, getActiveModelId } from "@/app/runtime/model-context";
 import { threadListAdapter } from "@/app/runtime/thread-adapter";
 import { ProfileSelector } from "@/components/profile-selector";
+import { ModelSelector } from "@/components/model-selector";
 import { DescribeDataToolUI } from "@/components/tool-uis/sql-tool";
 import { SqlApprovalTool } from "@/components/tool-uis/sql-approval";
 import { ReportInjectionTool } from "@/components/tool-uis/report-injection";
@@ -43,8 +45,8 @@ import {
 const config = AuiConfig({
   suggestions: Suggestions([
     "Décris les données disponibles",
-    "Quels profils portent *ALLOBJ dans SECAUDIT.USER_PROFILES ?",
-    "Montre les sessions de transfert du profil AAM0658 en octobre-novembre 2010",
+    "Pot de miel IBM i (HONEYPOT) : distingue le bruit de fond des attaques réellement ciblées, et identifie la menace la plus crédible pour ce serveur. Justifie par les chiffres.",
+    "Sur le pot de miel, quels profils réels ont été visés et depuis quelles adresses (internes vs externes) ?",
     "Y a-t-il des usurpations de profil (PS) dans SECAUDIT.QAUDJRN_PROFILE_SWAP ?",
   ]),
 });
@@ -79,6 +81,7 @@ const AssistantRuntime = () => {
           headers: () => ({
             "x-demo-profile": getActiveProfileId(),
             "x-demo-thinking": getReasoningMode(),
+            "x-demo-model": getActiveModelId(),
           }),
         }),
       }),
@@ -111,6 +114,7 @@ const AssistantRuntime = () => {
                 </BreadcrumbList>
               </Breadcrumb>
               <div className="ml-auto flex items-center gap-2">
+                <ModelSelector />
                 <ProfileSelector />
                 <AuditLog />
               </div>
@@ -134,10 +138,12 @@ const AssistantWithProfile = () => {
 
 export const Assistant = () => {
   return (
-    <ReasoningProvider>
-      <ProfileProvider>
-        <AssistantWithProfile />
-      </ProfileProvider>
-    </ReasoningProvider>
+    <ModelProvider>
+      <ReasoningProvider>
+        <ProfileProvider>
+          <AssistantWithProfile />
+        </ProfileProvider>
+      </ReasoningProvider>
+    </ModelProvider>
   );
 };

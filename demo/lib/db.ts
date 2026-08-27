@@ -26,6 +26,18 @@ function getDb(): DatabaseSync {
     } catch {
       // best-effort : les noms non qualifiés restent disponibles
     }
+    // Base pot de miel IBM i (réelle) attachée en plus, sous le schéma HONEYPOT :
+    // tables qaudjrn_pw / qaudjrn_sk / qaudjrn_im interrogeables en HONEYPOT.*.
+    const honeypot = process.env.HONEYPOT_DB_PATH;
+    if (honeypot) {
+      try {
+        handle.exec(
+          `ATTACH DATABASE 'file:${honeypot}?mode=ro' AS HONEYPOT`,
+        );
+      } catch {
+        // best-effort : la base pot de miel est optionnelle
+      }
+    }
     db = handle;
   }
   return db;
