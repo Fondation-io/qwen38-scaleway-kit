@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { guardSql } from "@/lib/sql-guard";
+import { guardSql, normalizeDb2 } from "@/lib/sql-guard";
 
 const MAX_ROWS = 200;
 const MAX_SQL_LENGTH = 5000;
@@ -45,7 +45,10 @@ export function runQuery(sql: string): QueryResult {
     throw new Error(`Requête trop longue (max ${MAX_SQL_LENGTH} caractères).`);
   }
 
-  const verdict = guardSql(sql);
+  // Normalise les Db2-ismes (FETCH FIRST → LIMIT) avant gate et exécution.
+  const normalized = normalizeDb2(sql);
+
+  const verdict = guardSql(normalized);
   if (!verdict.ok) {
     throw new Error(`Requête refusée par la gate : ${verdict.reason}`);
   }
@@ -54,7 +57,7 @@ export function runQuery(sql: string): QueryResult {
     console.warn("[sql-guard] fallback regex utilisé (parse AST en échec)");
   }
 
-  let text = sql.trim().replace(/;\s*$/, "");
+  let text = normalized.trim().replace(/;\s*$/, "");
   if (!/\bLIMIT\s+\d+/i.test(text)) {
     text = `${text} LIMIT ${MAX_ROWS}`;
   }

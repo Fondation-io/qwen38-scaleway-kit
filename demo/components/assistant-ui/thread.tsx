@@ -23,6 +23,8 @@ import {
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { MessageMetrics } from "@/components/message-metrics";
+import { ReasoningSelector } from "@/components/reasoning-selector";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -262,7 +264,10 @@ const Composer: FC = () => {
 const ComposerAction: FC = () => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <ComposerAddAttachment />
+      <div className="flex items-center gap-1.5">
+        <ComposerAddAttachment />
+        <ReasoningSelector />
+      </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
           <AuiIf condition={(s) => s.composer.dictation == null}>
@@ -399,6 +404,8 @@ const AssistantMessage: FC = () => {
         <BranchPicker />
         <AssistantActionBar />
       </div>
+
+      <MessageMetrics />
     </MessagePrimitive.Root>
   );
 };

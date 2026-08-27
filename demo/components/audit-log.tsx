@@ -12,6 +12,13 @@ interface AuditEvent {
   durationMs?: number;
   rowCount?: number;
   chartUrl?: string;
+  profile?: string;
+  decision?: string;
+  sql?: string;
+  source?: string;
+  reason?: string;
+  args?: unknown;
+  messageCount?: number;
   [key: string]: unknown;
 }
 
@@ -24,9 +31,30 @@ const TYPE_STYLE: Record<string, string> = {
   client_error: "text-destructive",
   process_error: "text-destructive",
   startup: "text-muted-foreground",
+  sql_approval: "text-amber-600",
+  injection_detected: "text-red-600",
+  injection_ack: "text-amber-600",
+};
+
+// Libellés des décisions d'approbation.
+const DECISION_LABEL: Record<string, string> = {
+  requested: "approbation demandée",
+  approved: "approuvée",
+  rejected: "refusée",
+  blocked: "bloquée (profil non habilité)",
 };
 
 function summary(e: AuditEvent): string {
+  if (e.type === "sql_approval") {
+    const who = e.profile ? ` par ${e.profile}` : "";
+    const dec = DECISION_LABEL[String(e.decision)] ?? String(e.decision ?? "");
+    const sql = e.sql ? ` — ${String(e.sql).slice(0, 80)}` : "";
+    return `lecture sensible ${dec}${who}${sql}`;
+  }
+  if (e.type === "injection_detected")
+    return `⚠️ injection signalée par l'agent — ${e.source ?? "?"} : ${e.reason ?? ""}`;
+  if (e.type === "injection_ack")
+    return `accusé de réception${e.profile ? ` par ${e.profile}` : ""} — ${e.source ?? ""}`;
   if (e.error) return String(e.error);
   if (e.type === "tool_result")
     return [
@@ -37,8 +65,10 @@ function summary(e: AuditEvent): string {
     ]
       .filter(Boolean)
       .join(" · ");
-  if (e.type === "tool_call") return `${e.tool} — ${JSON.stringify(e.args ?? {})}`;
-  if (e.type === "request") return `question (${e.messageCount ?? "?"} messages)`;
+  if (e.type === "tool_call")
+    return `${e.tool}${e.profile ? ` (${e.profile})` : ""} — ${JSON.stringify(e.args ?? {})}`;
+  if (e.type === "request")
+    return `question${e.profile ? ` (${e.profile})` : ""} (${e.messageCount ?? "?"} messages)`;
   if (e.type === "startup") return "démarrage serveur";
   return "";
 }

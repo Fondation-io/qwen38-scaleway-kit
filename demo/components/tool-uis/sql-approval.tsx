@@ -1,15 +1,34 @@
 "use client";
 
-import { makeAssistantTool } from "@assistant-ui/react";
-import { CheckIcon, XIcon, ShieldAlertIcon, Loader2Icon } from "lucide-react";
+import { makeAssistantTool, useToolArgsStatus } from "@assistant-ui/react";
+import {
+  CheckIcon,
+  XIcon,
+  ShieldAlertIcon,
+  Loader2Icon,
+  BanIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { ToolErrorBoundary } from "@/components/tool-uis/tool-error-boundary";
+import { getActiveProfileId } from "@/app/runtime/profile-context";
 
 type SqlResult =
   | { columns: string[]; rows: unknown[][]; rowCount: number }
   | { error: string }
-  | { rejected: true };
+  | { rejected: true }
+  // Refus dur imposé par le profil actif (contentAccess "none") : non exécuté,
+  // non approuvable. Le modèle est invité à proposer un agrégat.
+  | { blocked: true; reason?: string };
+
+// En-têtes des appels /api/sql : content-type + profil actif (cloisonnement +
+// gating par profil, D6).
+function sqlHeaders(): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    "x-demo-profile": getActiveProfileId(),
+  };
+}
 
 const MAX_ROWS = 20;
 
@@ -21,6 +40,21 @@ const formatCell = (v: unknown): string =>
       : String(v);
 
 function ResultView({ result }: { result: SqlResult }) {
+  if ("blocked" in result) {
+    return (
+      <div className="border-destructive/50 bg-destructive/5 text-destructive flex items-start gap-2 rounded-md border p-2.5 text-xs">
+        <BanIcon className="mt-0.5 size-4 shrink-0" />
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium">
+            Accès refusé par le profil — requête bloquée.
+          </span>
+          {result.reason && (
+            <span className="text-destructive/80">{result.reason}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
   if ("rejected" in result) {
     return (
       <p className="text-muted-foreground text-xs">
@@ -74,13 +108,20 @@ function logDecision(decision: string, sql: string) {
   fetch("/api/audit", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ type: "sql_approval", decision, sql }),
+    // Profil actif = approbateur (trace : QUI a approuvé/refusé).
+    body: JSON.stringify({
+      type: "sql_approval",
+      decision,
+      sql,
+      profile: getActiveProfileId(),
+    }),
   }).catch(() => {});
 }
 
 type ApprovalResponse =
   | SqlResult
-  | { status: "approval_required"; reason?: string };
+  | { status: "approval_required"; reason?: string }
+  | { status: "blocked"; reason?: string };
 
 function SqlApprovalRender(props: {
   args: { sql?: unknown };
@@ -90,6 +131,13 @@ function SqlApprovalRender(props: {
   const sql = typeof props.args?.sql === "string" ? props.args.sql : "";
   const result = props.result as SqlResult | undefined;
   const addResult = props.addResult as (r: SqlResult) => void;
+
+  // Statut de streaming des arguments : tant que `sql` n'est pas COMPLET, la
+  // valeur affichée/évaluée est partielle (ex. "SELECT", ou une requête sans son
+  // guillemet fermant). On n'évalue la requête qu'une fois les args entièrement
+  // reçus, sinon on POST du SQL tronqué → erreur de syntaxe et carte bloquée.
+  const { propStatus } = useToolArgsStatus<{ sql: string }>();
+  const sqlComplete = propStatus.sql === "complete";
 
   // "checking" = évaluation heuristique en cours ; "awaiting" = risque détecté,
   // on attend la décision de l'analyste.
@@ -101,7 +149,7 @@ function SqlApprovalRender(props: {
   const runSql = async (approve: boolean): Promise<SqlResult> => {
     const res = await fetch("/api/sql", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: sqlHeaders(),
       body: JSON.stringify({ sql, approved: approve }),
     });
     return (await res.json()) as SqlResult;
@@ -110,19 +158,25 @@ function SqlApprovalRender(props: {
   // Évaluation initiale : exécute directement si faible risque, sinon passe en
   // attente d'approbation. Ne tourne qu'une fois.
   useEffect(() => {
-    if (startedRef.current || !sql || result !== undefined) return;
+    if (startedRef.current || result !== undefined) return;
+    // Attendre que les arguments soient entièrement streamés avant d'évaluer.
+    if (!sqlComplete || !sql) return;
     startedRef.current = true;
     (async () => {
       try {
         const res = await fetch("/api/sql", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: sqlHeaders(),
           body: JSON.stringify({ sql }),
         });
         const data = (await res.json()) as ApprovalResponse;
         if ("status" in data && data.status === "approval_required") {
           setReason(data.reason);
           setPhase("awaiting");
+        } else if ("status" in data && data.status === "blocked") {
+          // Refus dur : on rend le résultat au run pour qu'il reprenne et que
+          // le modèle propose une alternative (agrégat).
+          addResult({ blocked: true, reason: data.reason });
         } else {
           addResult(data as SqlResult);
         }
@@ -131,7 +185,7 @@ function SqlApprovalRender(props: {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sql]);
+  }, [sql, sqlComplete]);
 
   const sqlBlock = (
     <pre className="bg-muted/50 text-foreground/90 overflow-x-auto rounded-md p-2.5 font-mono text-xs whitespace-pre-wrap">

@@ -4,6 +4,7 @@ import {
   AssistantRuntimeProvider,
   AuiConfig,
   Suggestions,
+  useRemoteThreadListRuntime,
 } from "@assistant-ui/react";
 import {
   useChatRuntime,
@@ -11,8 +12,13 @@ import {
 } from "@assistant-ui/react-ai-sdk";
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "@/components/assistant-ui/thread";
+import { ProfileProvider, useProfile, getActiveProfileId } from "@/app/runtime/profile-context";
+import { ReasoningProvider, getReasoningMode } from "@/app/runtime/reasoning-context";
+import { threadListAdapter } from "@/app/runtime/thread-adapter";
+import { ProfileSelector } from "@/components/profile-selector";
 import { DescribeDataToolUI } from "@/components/tool-uis/sql-tool";
 import { SqlApprovalTool } from "@/components/tool-uis/sql-approval";
+import { ReportInjectionTool } from "@/components/tool-uis/report-injection";
 import {
   UserTimelineToolUI,
   TransferSessionsToolUI,
@@ -57,17 +63,32 @@ const Welcome = () => {
   );
 };
 
-export const Assistant = () => {
-  const runtime = useChatRuntime({
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-    transport: new AssistantChatTransport({
-      api: "/api/chat",
-    }),
+// Runtime + UI. Isolé pour être remonté au changement de profil (via `key`),
+// ce qui rappelle `list()` avec le nouveau header et recharge la liste de
+// threads cloisonnée (D7). Le header du transport et l'adapter de threads lisent
+// le profil actif de manière SYNCHRONE depuis le singleton `getActiveProfileId`.
+const AssistantRuntime = () => {
+  const runtime = useRemoteThreadListRuntime({
+    runtimeHook: () =>
+      useChatRuntime({
+        sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+        transport: new AssistantChatTransport({
+          api: "/api/chat",
+          // Lecture SYNCHRONE des singletons : le niveau de réflexion suit sans
+          // remonter le runtime (contrairement au profil, via la `key`).
+          headers: () => ({
+            "x-demo-profile": getActiveProfileId(),
+            "x-demo-thinking": getReasoningMode(),
+          }),
+        }),
+      }),
+    adapter: threadListAdapter,
   });
 
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
       <SqlApprovalTool />
+      <ReportInjectionTool />
       <DescribeDataToolUI />
       <UserTimelineToolUI />
       <TransferSessionsToolUI />
@@ -89,7 +110,10 @@ export const Assistant = () => {
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
-              <AuditLog />
+              <div className="ml-auto flex items-center gap-2">
+                <ProfileSelector />
+                <AuditLog />
+              </div>
             </header>
             <div className="flex-1 overflow-hidden">
               <Thread components={{ Welcome }} />
@@ -98,5 +122,22 @@ export const Assistant = () => {
         </div>
       </SidebarProvider>
     </AssistantRuntimeProvider>
+  );
+};
+
+// Remonte tout le runtime quand le profil change : `list()` est rappelé avec le
+// nouveau header `x-demo-profile`, donc la liste de threads bascule.
+const AssistantWithProfile = () => {
+  const { profile } = useProfile();
+  return <AssistantRuntime key={profile.id} />;
+};
+
+export const Assistant = () => {
+  return (
+    <ReasoningProvider>
+      <ProfileProvider>
+        <AssistantWithProfile />
+      </ProfileProvider>
+    </ReasoningProvider>
   );
 };

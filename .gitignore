@@ -3,3 +3,7 @@ artifacts/
 lab/data/
 lab/output/
 demo/lab-scripts/
+
+.DS_Store
+**/.DS_Store
+__pycache__/

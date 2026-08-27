@@ -1,4 +1,6 @@
 import { Parser } from "node-sql-parser";
+import { SENSITIVE_COLUMNS as MASTER_SENSITIVE_COLUMNS } from "@/lib/profiles";
+import type { ProfilePolicy } from "@/lib/profiles";
 
 // Gate SQL basée sur l'AST (node-sql-parser). Plus subtile que le filtrage
 // par mots-clés : on lit le vrai type d'instruction et la liste des
@@ -29,6 +31,15 @@ const ALLOWED_TABLES = new Set([
   "guide_evidence",
 ]);
 
+// Normalise les quelques constructs Db2 for i qui divergent de SQLite, AVANT
+// le parsing/exécution. L'agent écrit du Db2 authentique (ex. FETCH FIRST) ;
+// le moteur reste SQLite. 95 % du SQL est commun ; on ne traite que le delta.
+export function normalizeDb2(sql: string): string {
+  return sql
+    .replace(/\bFETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b/gi, "LIMIT $1")
+    .replace(/\bFETCH\s+FIRST\s+ROW\s+ONLY\b/gi, "LIMIT 1");
+}
+
 const FORBIDDEN =
   /\b(ATTACH|DETACH|PRAGMA|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|VACUUM|REINDEX|TRIGGER)\b/i;
 const BLOCKED_IDENTIFIERS =
@@ -40,7 +51,9 @@ export interface GuardVerdict {
   parsed: boolean; // true = validé par l'AST ; false = validé par le repli regex
 }
 
-// Colonnes à contenu sensible (charge utile / PII exfiltrable).
+// Colonnes à contenu sensible (charge utile / PII exfiltrable). Repli
+// rétrocompat pour le chemin SANS politique (comportement historique — ne
+// couvre que le contenu de mail/objet, pas les PII employee_name/email).
 const SENSITIVE_COLUMNS =
   /\b(content|object_preview|recipients|sender|attachments)\b/i;
 const SELECT_STAR = /select\s+\*/i;
@@ -48,25 +61,123 @@ const SELECT_STAR = /select\s+\*/i;
 const SENSITIVE_VIEWS = /\b(qaudjrn_mail|qaudjrn_object)\b/i;
 const AGGREGATE = /\b(count|sum|avg|min|max)\s*\(|\bgroup\s+by\b/i;
 
+// Colonnes sensibles exposées par un SELECT * sur chaque vue à contenu. Sert à
+// traiter l'étoile comme touchant explicitement ces colonnes (le parser ne
+// développe pas `*` en liste de colonnes réelles).
+const SENSITIVE_VIEW_COLUMNS: Record<string, string[]> = {
+  qaudjrn_mail: ["recipients", "sender", "attachments", "content"],
+  qaudjrn_object: ["object_preview"],
+};
+
 export interface RiskVerdict {
   risky: boolean;
+  blocked?: boolean; // true = refus dur (profil contentAccess "none")
   reason?: string;
 }
 
-// Heuristique appliquée APRÈS parsing : une requête est « à risque » si elle
-// lit du contenu sensible en clair (corps de mail, objets exfiltrés,
-// destinataires, pièces jointes) SANS agrégation — donc si elle ramène des
-// enregistrements bruts plutôt que des compteurs. Les agrégats et comptages
-// passent sans friction.
-export function assessRisk(sql: string): RiskVerdict {
-  const readsContent =
-    SENSITIVE_COLUMNS.test(sql) ||
-    (SELECT_STAR.test(sql) && SENSITIVE_VIEWS.test(sql));
-  if (readsContent && !AGGREGATE.test(sql)) {
+// Retourne, parmi `deniedColumns`, celles que la requête touche réellement.
+// Détection en trois temps :
+//  (a) AST : `parser.columnList` renvoie `type::table::column` ; on croise le
+//      nom de colonne (dernier segment) avec la liste interdite. `null`/`(.*)`
+//      sont ignorés ici (l'étoile est gérée en (b)) ;
+//  (b) SELECT * sur une vue sensible (qaudjrn_mail/qaudjrn_object) = touche les
+//      colonnes sensibles de cette vue ;
+//  (c) repli regex `\bcol\b` (insensible casse) si le parser échoue — fail-closed.
+export function referencedSensitiveColumns(
+  sql: string,
+  deniedColumns: string[],
+): string[] {
+  if (deniedColumns.length === 0) return [];
+  const denied = new Set(deniedColumns.map((c) => c.toLowerCase()));
+  const hits = new Set<string>();
+
+  // (b) SELECT * sur une vue sensible : ajoute les colonnes sensibles de la vue
+  // (indépendant du parsing, marche aussi sur le chemin repli).
+  if (SELECT_STAR.test(sql)) {
+    for (const [view, cols] of Object.entries(SENSITIVE_VIEW_COLUMNS)) {
+      if (new RegExp(`\\b${view}\\b`, "i").test(sql)) {
+        for (const c of cols) if (denied.has(c)) hits.add(c);
+      }
+    }
+  }
+
+  try {
+    // (a) colonnes réellement listées dans l'AST.
+    const cols = parser.columnList(sql, OPT);
+    for (const entry of cols) {
+      const col = entry.split("::").pop() ?? "";
+      const name = col.toLowerCase();
+      if (name === "(.*)" || name === "*" || name === "null" || name === "")
+        continue;
+      if (denied.has(name)) hits.add(name);
+    }
+  } catch {
+    // (c) repli fail-closed : test regex mot-entier de chaque colonne interdite.
+    for (const c of denied) {
+      if (new RegExp(`\\b${c}\\b`, "i").test(sql)) hits.add(c);
+    }
+  }
+
+  return [...hits];
+}
+
+// Heuristique appliquée APRÈS parsing. La détection de sensibilité de base
+// reste « lit du contenu sensible en clair SANS agrégation » (agrégats et
+// comptages passent sans friction) ; c'est la DÉCISION (refus / carte /
+// passage) qui dépend du profil :
+//  - sans `policy` → comportement historique (rétrocompat) ;
+//  - `contentAccess: "none"`        → refus dur (blocked) si une colonne
+//    interdite du profil est lue en clair ;
+//  - `contentAccess: "self-approve"`→ carte d'approbation (comme avant) ;
+//  - `contentAccess: "allowed" | "unrestricted"` → jamais bloqué, jamais de carte.
+export function assessRisk(sql: string, policy?: ProfilePolicy): RiskVerdict {
+  // Chemin rétrocompat : aucune politique → heuristique historique inchangée.
+  if (!policy) {
+    const readsContent =
+      SENSITIVE_COLUMNS.test(sql) ||
+      (SELECT_STAR.test(sql) && SENSITIVE_VIEWS.test(sql));
+    if (readsContent && !AGGREGATE.test(sql)) {
+      return {
+        risky: true,
+        reason:
+          "Lecture de contenu sensible en clair (corps de mail, objets, destinataires, pièces jointes) sans agrégation.",
+      };
+    }
+    return { risky: false };
+  }
+
+  // Profils habilités : aucune friction, quelle que soit la requête.
+  if (policy.contentAccess === "allowed" || policy.contentAccess === "unrestricted") {
+    return { risky: false };
+  }
+
+  const aggregated = AGGREGATE.test(sql);
+
+  if (policy.contentAccess === "none") {
+    // Refus dur si une colonne INTERDITE DU PROFIL est lue en clair.
+    const touched = referencedSensitiveColumns(sql, policy.deniedColumns);
+    if (touched.length > 0 && !aggregated) {
+      return {
+        risky: true,
+        blocked: true,
+        reason: `Le profil actif n'est pas autorisé à lire ce contenu sensible (${touched.join(
+          ", ",
+        )}). Reformule en agrégat.`,
+      };
+    }
+    return { risky: false };
+  }
+
+  // contentAccess === "self-approve" : carte si lecture de contenu sensible
+  // (liste maîtresse) en clair — `deniedColumns` est vide pour ce profil, on
+  // s'appuie donc sur les colonnes réellement détectées côté liste maîtresse.
+  const sensitive = referencedSensitiveColumns(sql, MASTER_SENSITIVE_COLUMNS);
+  if (sensitive.length > 0 && !aggregated) {
     return {
       risky: true,
-      reason:
-        "Lecture de contenu sensible en clair (corps de mail, objets, destinataires, pièces jointes) sans agrégation.",
+      reason: `Lecture de contenu sensible en clair (${sensitive.join(
+        ", ",
+      )}) sans agrégation.`,
     };
   }
   return { risky: false };
@@ -86,7 +197,12 @@ function conservativeFallback(sql: string): GuardVerdict {
   return { ok: true, parsed: false };
 }
 
-export function guardSql(sql: string): GuardVerdict {
+// Garde STRUCTURELLE (lecture seule + allowlist de vues + CTE + repli
+// fail-closed). Le paramètre `policy` est accepté pour compatibilité de
+// signature (D4) mais volontairement IGNORÉ ici : le blocage colonne-level vit
+// dans `assessRisk`, pas dans la garde read-only. Cela garde une seule source
+// de vérité pour le gating par profil et laisse `guardSql` indépendant du profil.
+export function guardSql(sql: string, _policy?: ProfilePolicy): GuardVerdict {
   let tableList: string[];
   let cteNames: Set<string>;
   try {
