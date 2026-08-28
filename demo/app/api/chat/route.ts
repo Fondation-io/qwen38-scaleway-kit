@@ -60,8 +60,8 @@ Règles :
 - Si une requête est REFUSÉE par la gate ou échoue, NE la relance JAMAIS à l'identique : lis le message d'erreur, corrige (ou change d'approche). Deux échecs identiques d'affilée = arrête et explique.
 - RECHERCHE (assistant de sécurité) : pour une question qui dépasse les journaux internes (vulnérabilités, avis éditeurs, contexte de menace, veille) :
   • cve_rag : recherche SÉMANTIQUE dans une base LOCALE et CONFIDENTIELLE des CVE IBM i + bulletins IBM (la requête ne sort pas). À privilégier pour une question conceptuelle. Requête en anglais.
-  • cve_search / cve_detail : NVD/NIST par mot-clé exact (produit entre guillemets, exact=true) ou par identifiant.
-  • web_search (Google), ask_perplexity (réponse sourcée), fetch_url (lire une page) : pour la veille la plus récente (ces trois-là envoient la requête à l'extérieur).
+  • cve_search / cve_detail : NVD/NIST par mot-clé (passe le produit SEUL, ex. IBM i — SANS guillemets ; exact=true suffit à filtrer la phrase) ou par identifiant.
+  • web_search (Google), ask_perplexity (réponse sourcée), fetch_url (lire une page) : pour la veille la plus récente (ces trois-là envoient la requête à l'extérieur) — disponibles UNIQUEMENT si la recherche web est autorisée (voir bloc « RECHERCHE WEB EXTERNE »).
   Sépare l'analyse des données internes (SQL) de la recherche ; CITE toujours tes sources (liens, CVE) ; n'invente jamais une CVE ni un score — vérifie via l'outil.
 - describe_data (data_profile) ne profile QUE les tables cert_* et guide_evidence. Les vues SECAUDIT.* et les tables HONEYPOT.* n'y sont PAS : n'appelle PAS describe_data dessus (il renvoie vide) — interroge-les directement (COUNT(*), DISTINCT, GROUP BY) pour connaître volumes et valeurs.
 - Quand une visualisation aide, préférer les tools graphiques (user_timeline, transfer_sessions, after_hours, outliers) à sql_query. Dates de ces tools au format YYYY-MM-DD.
@@ -171,7 +171,20 @@ export async function POST(req: Request) {
       messageCount: Array.isArray(messages) ? messages.length : 0,
     });
 
-    const system = `${SYSTEM_PROMPT}\n\n${profileBlock(profile)}`;
+    // Date du jour injectée : sans elle, le modèle applique son cutoff
+    // d'entraînement et rejette à tort les CVE de l'année courante (ex. CVE-2026-…)
+    // comme « incohérentes/artefacts ». Les IDs renvoyés par les outils font foi.
+    const today = new Date().toISOString().slice(0, 10);
+    const dateBlock = `DATE DU JOUR : ${today}. Les identifiants CVE de l'année courante (ex. CVE-${today.slice(0, 4)}-…) sont NORMAUX et souvent les PLUS PERTINENTS : ne les traite jamais comme des artefacts. Les CVE et scores renvoyés par les outils (cve_rag, cve_search, cve_detail) proviennent de NVD/NIST et FONT FOI — ne les contredis pas depuis tes connaissances internes.`;
+
+    // Autorisation explicite de la recherche web externe (header propagé par le
+    // bouton du prompt input). Coupée par défaut : les outils web_search/
+    // ask_perplexity/fetch_url ne sont alors PAS exposés au modèle.
+    const allowWebSearch = req.headers.get("x-demo-websearch") === "on";
+    const webBlock = allowWebSearch
+      ? `RECHERCHE WEB EXTERNE : AUTORISÉE par l'analyste. Tu peux utiliser web_search, ask_perplexity et fetch_url (la requête sort du périmètre). Sépare l'analyse interne (SQL) de la recherche externe et CITE tes sources.`
+      : `RECHERCHE WEB EXTERNE : NON autorisée. Les outils web_search, ask_perplexity et fetch_url sont indisponibles — ne les mentionne pas comme option. Reste sur les données internes (SQL) et la base CVE LOCALE (cve_rag) ; cve_search/cve_detail (NVD) restent disponibles. Si une veille web est nécessaire, indique-le et invite l'analyste à activer la recherche web.`;
+    const system = `${SYSTEM_PROMPT}\n\n${dateBlock}\n\n${webBlock}\n\n${profileBlock(profile)}`;
 
     // Pour les modèles TEE : on capture l'id de complétion du provider (dernier
     // step = réponse finale) afin de récupérer la signature d'attestation côté client.
@@ -186,7 +199,7 @@ export async function POST(req: Request) {
       messages: await convertToModelMessages(messages),
       tools: {
         ...frontendTools(clientTools ?? {}),
-        ...makeTools({ traceId }),
+        ...makeTools({ traceId }, { allowWebSearch }),
       },
       stopWhen: stepCountIs(30),
       onError: ({ error }) => {
@@ -218,6 +231,42 @@ export async function POST(req: Request) {
           }),
         );
         await result.finishReason; // attend la fin (teeChatId posé par onStepFinish)
+
+        // Usage RÉEL renvoyé par le provider (includeUsage) émis en part de contenu
+        // `data-usage` — comme le TEE, car la messageMetadata AI SDK n'atteint pas
+        // la metadata client via le transport assistant-ui. C'est la SEULE source
+        // des stats token : aucun re-tokenize côté client, donc aucun couplage au
+        // tokenizer vLLM (les stats marchent pour NEAR/Baseten sans la L40S).
+        let usage;
+        try {
+          usage = await result.totalUsage;
+        } catch {
+          usage = undefined;
+        }
+        if (usage) {
+          // Prix de l'exécution = tokens × tarifs du registre ($/M). Nul pour le
+          // vLLM souverain (auto-hébergé, tarifs à 0) → non affiché côté client.
+          const input = usage.inputTokens ?? 0;
+          const output = usage.outputTokens ?? 0;
+          // reasoningTokens n'est pas dans le type LanguageModelUsage de cette
+          // version, mais certains providers le peuplent au runtime → lecture par
+          // cast optionnel (sinon le split réflexion se fait côté client).
+          const reasoning =
+            (usage as { reasoningTokens?: number }).reasoningTokens ?? null;
+          const costUsd =
+            (input / 1e6) * (entry.priceInPerM ?? 0) +
+            (output / 1e6) * (entry.priceOutPerM ?? 0);
+          writer.write({
+            type: "data-usage",
+            data: {
+              input: usage.inputTokens ?? null,
+              output: usage.outputTokens ?? null,
+              reasoning,
+              costUsd: costUsd > 0 ? costUsd : null,
+            },
+          });
+        }
+
         if (entry.tee && teeChatId) {
           writer.write({
             type: "data-tee",

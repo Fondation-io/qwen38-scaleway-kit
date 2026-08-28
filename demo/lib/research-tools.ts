@@ -181,8 +181,12 @@ export async function cveSearch(
   opts: { exact?: boolean; limit?: number } = {},
 ): Promise<Record<string, unknown>> {
   const limit = Math.min(opts.limit ?? 10, 40);
+  // Le modèle encadre souvent le mot-clé de guillemets (consigne cve.org) : NVD
+  // les cherche alors littéralement → 0 résultat. keywordExactMatch fait déjà le
+  // filtre phrase, on retire donc les guillemets encadrants.
+  const cleaned = keyword.trim().replace(/^["']+|["']+$/g, "").trim();
   const params = new URLSearchParams({
-    keywordSearch: keyword,
+    keywordSearch: cleaned,
     resultsPerPage: String(limit),
   });
   if (opts.exact) params.set("keywordExactMatch", "");

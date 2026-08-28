@@ -14,6 +14,7 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ProfileProvider, useProfile, getActiveProfileId } from "@/app/runtime/profile-context";
 import { ReasoningProvider, getReasoningMode } from "@/app/runtime/reasoning-context";
+import { WebSearchProvider, getWebSearchEnabled } from "@/app/runtime/websearch-context";
 import { ModelProvider, getActiveModelId } from "@/app/runtime/model-context";
 import { threadListAdapter } from "@/app/runtime/thread-adapter";
 import { ProfileSelector } from "@/components/profile-selector";
@@ -82,6 +83,7 @@ const AssistantRuntime = () => {
             "x-demo-profile": getActiveProfileId(),
             "x-demo-thinking": getReasoningMode(),
             "x-demo-model": getActiveModelId(),
+            "x-demo-websearch": getWebSearchEnabled() ? "on" : "off",
           }),
         }),
       }),
@@ -140,9 +142,11 @@ export const Assistant = () => {
   return (
     <ModelProvider>
       <ReasoningProvider>
-        <ProfileProvider>
-          <AssistantWithProfile />
-        </ProfileProvider>
+        <WebSearchProvider>
+          <ProfileProvider>
+            <AssistantWithProfile />
+          </ProfileProvider>
+        </WebSearchProvider>
       </ReasoningProvider>
     </ModelProvider>
   );

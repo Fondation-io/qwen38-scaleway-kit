@@ -97,7 +97,49 @@ function traced<A>(
   };
 }
 
-export function makeTools(ctx: ToolContext) {
+// Outils de recherche web EXTERNE (la requête sort du périmètre : Serper/Google,
+// Perplexity, fetch d'URL arbitraire). Inclus dans le jeu d'outils UNIQUEMENT si
+// l'analyste a explicitement autorisé la recherche web (bouton du prompt input,
+// header `x-demo-websearch`). Non autorisée = le modèle ne peut pas les appeler.
+function webExternalTools(ctx: ToolContext) {
+  return {
+    web_search: tool({
+      description:
+        "Recherche web (Google via Serper). Pour trouver des informations à jour : avis de sécurité éditeurs, articles, documentation, contexte de menace. Retourne les meilleurs résultats (titre, lien, extrait). Cite toujours les liens.",
+      inputSchema: z.object({
+        query: z.string().describe("Requête de recherche"),
+        num: z.number().min(1).max(10).optional().describe("Nombre de résultats (défaut 6)"),
+      }),
+      execute: traced(
+        ctx,
+        "web_search",
+        ({ query, num }: { query: string; num?: number }) => webSearch(query, num),
+      ),
+    }),
+    ask_perplexity: tool({
+      description:
+        "Pose une question à Perplexity (réponse synthétique SOURCÉE avec citations). Utile pour une réponse déjà agrégée à une question de veille/menace plutôt qu'une liste de liens.",
+      inputSchema: z.object({
+        question: z.string().describe("Question en langage naturel"),
+      }),
+      execute: traced(
+        ctx,
+        "ask_perplexity",
+        ({ question }: { question: string }) => askPerplexity(question),
+      ),
+    }),
+    fetch_url: tool({
+      description:
+        "Récupère le contenu texte d'une page web publique (http/https). À utiliser pour lire un avis de sécurité, une page CVE, une doc éditeur trouvés via web_search. Adresses internes refusées.",
+      inputSchema: z.object({
+        url: z.string().describe("URL http(s) publique"),
+      }),
+      execute: traced(ctx, "fetch_url", ({ url }: { url: string }) => fetchUrl(url)),
+    }),
+  };
+}
+
+export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
   // sql_query n'est PAS ici : c'est un tool CLIENT (composants/tool-uis/
   // sql-approval.tsx) soumis à validation humaine avant exécution (gate HITL).
   return {
@@ -243,44 +285,14 @@ export function makeTools(ctx: ToolContext) {
     }),
 
     // --- Recherche autonome (assistant de sécurité) ---
-    web_search: tool({
-      description:
-        "Recherche web (Google via Serper). Pour trouver des informations à jour : avis de sécurité éditeurs, articles, documentation, contexte de menace. Retourne les meilleurs résultats (titre, lien, extrait). Cite toujours les liens.",
-      inputSchema: z.object({
-        query: z.string().describe("Requête de recherche"),
-        num: z.number().min(1).max(10).optional().describe("Nombre de résultats (défaut 6)"),
-      }),
-      execute: traced(
-        ctx,
-        "web_search",
-        ({ query, num }: { query: string; num?: number }) => webSearch(query, num),
-      ),
-    }),
-    ask_perplexity: tool({
-      description:
-        "Pose une question à Perplexity (réponse synthétique SOURCÉE avec citations). Utile pour une réponse déjà agrégée à une question de veille/menace plutôt qu'une liste de liens.",
-      inputSchema: z.object({
-        question: z.string().describe("Question en langage naturel"),
-      }),
-      execute: traced(
-        ctx,
-        "ask_perplexity",
-        ({ question }: { question: string }) => askPerplexity(question),
-      ),
-    }),
-    fetch_url: tool({
-      description:
-        "Récupère le contenu texte d'une page web publique (http/https). À utiliser pour lire un avis de sécurité, une page CVE, une doc éditeur trouvés via web_search. Adresses internes refusées.",
-      inputSchema: z.object({
-        url: z.string().describe("URL http(s) publique"),
-      }),
-      execute: traced(ctx, "fetch_url", ({ url }: { url: string }) => fetchUrl(url)),
-    }),
+    // web_search / ask_perplexity / fetch_url : inclus SEULEMENT si l'analyste a
+    // autorisé la recherche web externe (sinon le modèle ne peut pas les appeler).
+    ...(opts.allowWebSearch ? webExternalTools(ctx) : {}),
     cve_search: tool({
       description:
-        "Recherche de CVE (base NVD/NIST) par mot-clé ou produit (ex. 'IBM i', 'QSYS', 'Db2 for i'). Mets le terme entre guillemets pour un filtre exact (exact=true). Retourne id, sévérité CVSS, score, CWE et description. Renseigne le total pour cadrer le volume.",
+        "Recherche de CVE (base NVD/NIST) par mot-clé ou produit (ex. IBM i, QSYS, Db2 for i). Passe le terme SEUL, sans guillemets ; exact=true suffit à filtrer la phrase. Retourne id, sévérité CVSS, score, CWE et description. Renseigne le total pour cadrer le volume.",
       inputSchema: z.object({
-        keyword: z.string().describe("Mot-clé ou produit (ex. \"IBM i\")"),
+        keyword: z.string().describe("Mot-clé ou produit, sans guillemets (ex. IBM i)"),
         exact: z.boolean().optional().describe("Correspondance exacte de la phrase"),
         limit: z.number().min(1).max(40).optional().describe("Nb de résultats (défaut 10)"),
       }),
