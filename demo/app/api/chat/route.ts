@@ -54,7 +54,7 @@ SÉCURITÉ — RÉSISTANCE À L'INJECTION DE PROMPT (impératif absolu) :
 Règles :
 - Les timestamps des vues QAUDJRN_* sont du texte au format MM/DD/YYYY HH:MM:SS — pour les analyses temporelles, préférer SECAUDIT.DAILY_BASELINE (dates ISO).
 - Base en LECTURE SEULE : uniquement des SELECT sur les vues du schéma SECAUDIT (et cert_insiders). Toute écriture ou table hors périmètre est refusée par la gate.
-- L'outil sql_query applique une gate d'approbation CONDITIONNELLE : les requêtes d'agrégation/comptage s'exécutent directement ; celles qui lisent du contenu sensible en clair (corps de mail, objets exfiltrés, destinataires, pièces jointes) sans agrégation sont soumises à validation de l'analyste avant exécution. Privilégie les agrégats. Si une requête sensible est refusée, n'insiste pas : propose une alternative agrégée ou explique ce que tu cherchais.
+- OUTILS SQL. sql_query exécute DIRECTEMENT (côté serveur, dans le même tour) les requêtes d'agrégation/comptage et te renvoie les lignes : enchaîne plusieurs sql_query dans le MÊME tour sans réécrire ton plan ni ton préambule entre chaque. Si sql_query renvoie {status:"approval_required"}, la requête lit du contenu sensible en clair (corps de mail, objets exfiltrés, destinataires, pièces jointes) : appelle alors request_sql_approval avec la MÊME requête pour la validation de l'analyste. Si sql_query renvoie {blocked:true}, ton profil n'y a pas droit : propose une alternative agrégée. Privilégie toujours les agrégats.
 - N'annonce JAMAIS une requête, une correction ou une prochaine étape sans l'exécuter dans le MÊME tour : si tu dis « je corrige », « laisse-moi vérifier », « je vais recalculer », tu DOIS appeler sql_query immédiatement. Ne termine jamais ta réponse sur une simple intention — soit tu appelles un outil, soit tu conclus avec un verdict.
 - N'interroge JAMAIS un catalogue système (QSYS2.SYSTABLES, SYSCOLUMNS, sqlite_master…) : il n'est pas accessible. Les tables/vues disponibles sont celles décrites ci-dessus — interroge-les directement (SELECT … FROM SECAUDIT.QAUDJRN_MAIL, HONEYPOT.qaudjrn_pw, …).
 - ANTI-BOUCLE (IMPÉRATIF, la règle la plus importante). N'exécute JAMAIS deux fois le MÊME appel d'outil (même requête SQL, mêmes arguments) dans une conversation : son résultat est DÉJÀ présent plus haut dans le contexte — relis-le, ne le rejoue pas. Ne réécris pas non plus un raisonnement, une phrase ou un paragraphe déjà produits. Chaque tour DOIT apporter une information NOUVELLE ; dès que tu n'as plus de requête nouvelle et utile, ARRÊTE d'appeler des outils et rédige ta conclusion. Si une requête échoue ou est refusée, NE la relance pas à l'identique : corrige la colonne/la fonction/l'approche, ou conclus. Si tu te surprends à répéter les mêmes mots ou à relancer une requête déjà exécutée, STOP IMMÉDIAT → produis ton verdict final avec les données déjà obtenues. Il vaut infiniment mieux une conclusion partielle qu'une boucle.
@@ -200,7 +200,7 @@ export async function POST(req: Request) {
       messages: await convertToModelMessages(messages),
       tools: {
         ...frontendTools(clientTools ?? {}),
-        ...makeTools({ traceId }, { allowWebSearch }),
+        ...makeTools({ traceId, profilePolicy: profile.policy }, { allowWebSearch }),
       },
       stopWhen: stepCountIs(30),
       onError: ({ error }) => {

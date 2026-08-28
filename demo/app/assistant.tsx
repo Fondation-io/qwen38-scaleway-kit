@@ -19,7 +19,7 @@ import { ModelProvider, getActiveModelId } from "@/app/runtime/model-context";
 import { threadListAdapter } from "@/app/runtime/thread-adapter";
 import { ProfileSelector } from "@/components/profile-selector";
 import { ModelSelector } from "@/components/model-selector";
-import { DescribeDataToolUI } from "@/components/tool-uis/sql-tool";
+import { DescribeDataToolUI, SqlQueryToolUI } from "@/components/tool-uis/sql-tool";
 import { SqlApprovalTool } from "@/components/tool-uis/sql-approval";
 import { ReportInjectionTool } from "@/components/tool-uis/report-injection";
 import {
@@ -94,6 +94,7 @@ const AssistantRuntime = () => {
     <AssistantRuntimeProvider runtime={runtime} config={config}>
       <SqlApprovalTool />
       <ReportInjectionTool />
+      <SqlQueryToolUI />
       <DescribeDataToolUI />
       <UserTimelineToolUI />
       <TransferSessionsToolUI />

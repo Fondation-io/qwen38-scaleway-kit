@@ -294,11 +294,11 @@ function SqlApprovalRender(props: {
 }
 
 export const SqlApprovalTool = makeAssistantTool({
-  toolName: "sql_query",
+  toolName: "request_sql_approval",
   description:
-    "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i. Les requêtes d'agrégation s'exécutent directement ; celles qui lisent du contenu sensible en clair peuvent demander une validation humaine. Formule une requête claire et autoportante.",
+    "Demande la validation HUMAINE d'une requête SQL SENSIBLE (lecture de contenu en clair : corps de mail, objets exfiltrés, destinataires, pièces jointes). À n'utiliser QUE lorsque sql_query a renvoyé {status:\"approval_required\"} : rappelle-le ici avec la MÊME requête. Affiche une carte d'approbation à l'analyste, puis exécute si accordé.",
   parameters: z.object({
-    sql: z.string().describe("Requête SQL (SELECT ou WITH ... SELECT)"),
+    sql: z.string().describe("Requête SQL sensible à faire valider (SELECT ou WITH ... SELECT)"),
   }),
   render: SqlApprovalRender,
 });

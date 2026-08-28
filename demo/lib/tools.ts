@@ -4,6 +4,8 @@ import { promisify } from "node:util";
 import { tool } from "ai";
 import { z } from "zod";
 import { runQuery } from "@/lib/db";
+import { assessRisk } from "@/lib/sql-guard";
+import type { ProfilePolicy } from "@/lib/profiles";
 import { audit } from "@/lib/audit";
 import {
   webSearch,
@@ -61,6 +63,22 @@ function summarize(out: unknown): Record<string, unknown> {
 
 export interface ToolContext {
   traceId: string;
+  // Profil actif : politique de gating appliquée au tool serveur sql_query.
+  profilePolicy?: ProfilePolicy;
+}
+
+// Plafonne un résultat SQL avant de le renvoyer au modèle (économie de contexte),
+// même logique que la carte client : ≤ 60 lignes et ≤ 6000 caractères sérialisés.
+const MAX_MODEL_ROWS = 60;
+const MAX_MODEL_CHARS = 6000;
+function capRows(result: { columns: string[]; rows: unknown[]; rowCount: number }) {
+  let rows = result.rows.slice(0, MAX_MODEL_ROWS);
+  while (rows.length > 5 && JSON.stringify(rows).length > MAX_MODEL_CHARS) {
+    rows = rows.slice(0, Math.ceil(rows.length * 0.7));
+  }
+  return rows.length === result.rows.length
+    ? result
+    : { ...result, rows, truncated: true };
 }
 
 // Enveloppe chaque tool : journalise appel + résultat/erreur + durée, et
@@ -140,9 +158,30 @@ function webExternalTools(ctx: ToolContext) {
 }
 
 export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
-  // sql_query n'est PAS ici : c'est un tool CLIENT (composants/tool-uis/
-  // sql-approval.tsx) soumis à validation humaine avant exécution (gate HITL).
   return {
+    // sql_query est un tool SERVEUR : les requêtes NON sensibles s'exécutent
+    // directement DANS le run streamText (pas de round-trip client), ce qui
+    // permet au modèle d'enchaîner N requêtes en UNE génération — donc UN seul
+    // préambule/raisonnement, sans la boucle « re-préambule à chaque requête »
+    // qu'induisait un tool client. Le HITL (carte d'approbation) est conservé
+    // pour les requêtes sensibles via le tool CLIENT `request_sql_approval` :
+    // ici, une requête sensible renvoie {status:"approval_required"} et le modèle
+    // rappelle request_sql_approval avec la même requête.
+    sql_query: tool({
+      description:
+        "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i (schémas SECAUDIT et HONEYPOT). Les requêtes d'agrégation/comptage s'exécutent DIRECTEMENT et renvoient les lignes. Si la requête lit du contenu sensible en clair sans agrégation, le résultat est {status:\"approval_required\"} : appelle alors request_sql_approval avec la MÊME requête pour la validation de l'analyste. Une requête refusée renvoie {blocked:true}. Formule une requête claire et autoportante.",
+      inputSchema: z.object({
+        sql: z.string().describe("Requête SQL (SELECT ou WITH ... SELECT)"),
+      }),
+      execute: traced(ctx, "sql_query", async ({ sql }: { sql: string }) => {
+        const risk = assessRisk(sql, ctx.profilePolicy);
+        if (risk.blocked) return { blocked: true, reason: risk.reason };
+        if (risk.risky) {
+          return { status: "approval_required", reason: risk.reason, sql };
+        }
+        return capRows(runQuery(sql));
+      }),
+    }),
     describe_data: tool({
       description:
         "Retourne le profil des données (table data_profile) : pour chaque colonne, nombre de lignes, valeurs distinctes, nulls, min/max et valeurs les plus fréquentes. Filtrable par table.",

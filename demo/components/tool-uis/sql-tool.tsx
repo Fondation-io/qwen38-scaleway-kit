@@ -17,11 +17,23 @@ type SqlToolResult = {
 };
 
 type SqlToolError = { error: string };
+// sql_query (tool serveur) peut renvoyer, au lieu de lignes : une demande
+// d'approbation (requête sensible) ou un refus dur (profil).
+type SqlToolApproval = { status: "approval_required"; reason?: string };
+type SqlToolBlocked = { blocked: true; reason?: string };
 
-type SqlToolOutput = SqlToolResult | SqlToolError;
+type SqlToolOutput =
+  | SqlToolResult
+  | SqlToolError
+  | SqlToolApproval
+  | SqlToolBlocked;
 
 const isError = (r: SqlToolOutput): r is SqlToolError =>
   r != null && "error" in r;
+const isApproval = (r: SqlToolOutput): r is SqlToolApproval =>
+  r != null && (r as SqlToolApproval).status === "approval_required";
+const isBlocked = (r: SqlToolOutput): r is SqlToolBlocked =>
+  r != null && (r as SqlToolBlocked).blocked === true;
 
 const MAX_DISPLAYED_ROWS = 20;
 
@@ -140,6 +152,16 @@ const makeSqlToolUI = (options: {
           {isError(result) ? (
             <p className="border-destructive/50 text-destructive rounded-md border p-2 text-xs">
               Erreur : {result.error}
+            </p>
+          ) : isApproval(result) ? (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-600 dark:text-amber-500">
+              Requête sensible — validation de l&apos;analyste demandée
+              {result.reason ? ` (${result.reason})` : ""}.
+            </p>
+          ) : isBlocked(result) ? (
+            <p className="text-muted-foreground rounded-md border p-2 text-xs">
+              Requête refusée par la gate
+              {result.reason ? ` : ${result.reason}` : ""}.
             </p>
           ) : (
             <ResultTable result={result} />
