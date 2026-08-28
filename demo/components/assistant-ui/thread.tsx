@@ -26,6 +26,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { MessageMetrics } from "@/components/message-metrics";
 import { ReasoningSelector } from "@/components/reasoning-selector";
 import { WebSearchToggle } from "@/components/websearch-toggle";
+import { ContextMeter } from "@/components/context-meter";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -269,6 +270,7 @@ const ComposerAction: FC = () => {
         <ComposerAddAttachment />
         <ReasoningSelector />
         <WebSearchToggle />
+        <ContextMeter />
       </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>

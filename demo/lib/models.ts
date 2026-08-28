@@ -18,6 +18,7 @@ export interface ModelEntry {
   apiKeyEnv: string; // var d'env pour la clé
   tee: boolean;
   contextLabel: string; // ex. "64K", "262K"
+  contextTokens: number; // fenêtre de contexte du modèle (tokens) — pour la jauge
   // Prix indicatif par million de tokens (USD). null = auto-hébergé (coût GPU).
   priceInPerM: number | null;
   priceOutPerM: number | null;
@@ -38,6 +39,7 @@ export const MODELS: ModelEntry[] = [
     apiKeyEnv: "VLLM_API_KEY",
     tee: false,
     contextLabel: "64K",
+    contextTokens: 65536,
     priceInPerM: null,
     priceOutPerM: null,
     qwenThinking: true,
@@ -52,6 +54,7 @@ export const MODELS: ModelEntry[] = [
     apiKeyEnv: "NEAR_AI_API_KEY",
     tee: true,
     contextLabel: "262K",
+    contextTokens: 262144,
     priceInPerM: 0.44,
     priceOutPerM: 3.3,
     attestation: true,
@@ -67,6 +70,7 @@ export const MODELS: ModelEntry[] = [
     apiKeyEnv: "NEAR_AI_API_KEY",
     tee: true,
     contextLabel: "1M",
+    contextTokens: 1000000,
     priceInPerM: 0.17,
     priceOutPerM: 0.35,
     attestation: true,
@@ -81,6 +85,7 @@ export const MODELS: ModelEntry[] = [
     apiKeyEnv: "BASETEN_API_KEY",
     tee: false,
     contextLabel: "1M",
+    contextTokens: 1000000,
     priceInPerM: 0.13,
     priceOutPerM: 0.26,
   },
@@ -94,6 +99,7 @@ export const MODELS: ModelEntry[] = [
     apiKeyEnv: "BASETEN_API_KEY",
     tee: false,
     contextLabel: "1M",
+    contextTokens: 1000000,
     priceInPerM: 0.15,
     priceOutPerM: 0.5,
   },

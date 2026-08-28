@@ -167,6 +167,39 @@ export function appendMessage(
 ): boolean {
   if (!getThread(profileId, threadId)) return false;
   const database = getDb();
+
+  // Collapse des snapshots cumulatifs. assistant-ui persiste CHAQUE continuation
+  // d'outil (sql_query passe par la gate client → auto-send) comme un NOUVEAU
+  // message assistant, cumulatif (il contient tout le contenu des précédents),
+  // chaîné au snapshot précédent. Sans collapse : 1 tour = 7-11 lignes qui se
+  // recouvrent → au rechargement/replay le modèle revoit le même contenu ×N
+  // (contexte qui explose, écran qui semble boucler). Règle : si le message
+  // entrant est un ASSISTANT dont le parent est LUI AUSSI un message assistant
+  // (donc un snapshot du même tour, que le nouveau superset), on supprime ce
+  // parent et on re-pointe sur le grand-parent. Un vrai nouveau tour a pour
+  // parent un message user → il n'est jamais supprimé.
+  let parentId = message.parent_id;
+  const role = (message.content as { role?: string } | null)?.role;
+  if (role === "assistant" && parentId) {
+    const parent = database
+      .prepare("SELECT parent_id, content FROM messages WHERE id = ? AND thread_id = ?")
+      .get(parentId, threadId) as { parent_id: string | null; content: string } | undefined;
+    if (parent) {
+      let parentRole: string | undefined;
+      try {
+        parentRole = (JSON.parse(parent.content) as { role?: string }).role;
+      } catch {
+        parentRole = undefined;
+      }
+      if (parentRole === "assistant") {
+        database
+          .prepare("DELETE FROM messages WHERE id = ? AND thread_id = ?")
+          .run(parentId, threadId);
+        parentId = parent.parent_id; // re-pointe sur le grand-parent (in fine, le message user)
+      }
+    }
+  }
+
   database
     .prepare(
       "INSERT OR REPLACE INTO messages(id, thread_id, parent_id, format, content, created_at) VALUES(?, ?, ?, ?, ?, ?)",
@@ -174,7 +207,7 @@ export function appendMessage(
     .run(
       message.id,
       threadId,
-      message.parent_id,
+      parentId,
       message.format,
       JSON.stringify(message.content),
       Date.now(),
