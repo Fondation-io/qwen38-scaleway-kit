@@ -39,7 +39,7 @@ export function ThreadListSidebar({
                   <span className="aui-sidebar-header-title font-semibold">
                     Enquête sécurité
                   </span>
-                  <span>Qwen3.8-27B</span>
+                  <span>IBM i · multi-modèle</span>
                 </div>
               </SidebarMenuButton>
             </SidebarMenuItem>

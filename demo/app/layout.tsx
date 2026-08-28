@@ -16,7 +16,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Enquête sécurité — démo Qwen3.8-27B",
+  title: "Enquête sécurité — démo IBM i",
   description: "Chatbot d'enquête sécurité sur les journaux d'activité",
 };
 
