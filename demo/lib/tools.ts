@@ -11,6 +11,7 @@ import {
   fetchUrl,
   cveSearch,
   cveDetail,
+  cveRag,
 } from "@/lib/research-tools";
 
 const execFileAsync = promisify(execFile);
@@ -288,6 +289,19 @@ export function makeTools(ctx: ToolContext) {
         "cve_search",
         ({ keyword, exact, limit }: { keyword: string; exact?: boolean; limit?: number }) =>
           cveSearch(keyword, { exact, limit }),
+      ),
+    }),
+    cve_rag: tool({
+      description:
+        "Recherche SÉMANTIQUE (par le sens, pas le mot-clé) dans une base LOCALE et CONFIDENTIELLE des CVE IBM i + bulletins de sécurité IBM (embeddings locaux, la requête ne sort pas de l'infra). À privilégier pour une question conceptuelle (ex. « failles d'élévation de privilège sur le serveur HTTP IBM i »). Formule la requête en anglais (corpus anglais). Retourne les CVE les plus proches avec score sémantique et liens de bulletins.",
+      inputSchema: z.object({
+        query: z.string().describe("Requête sémantique, de préférence en anglais"),
+        k: z.number().min(1).max(20).optional().describe("Nb de résultats (défaut 6)"),
+      }),
+      execute: traced(
+        ctx,
+        "cve_rag",
+        ({ query, k }: { query: string; k?: number }) => cveRag(query, k),
       ),
     }),
     cve_detail: tool({

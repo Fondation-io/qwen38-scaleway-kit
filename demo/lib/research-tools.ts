@@ -197,6 +197,28 @@ export async function cveSearch(
   };
 }
 
+// Recherche SÉMANTIQUE locale/confidentielle via le service RAG indépendant
+// (index CVE IBM i + bulletins, embeddings locaux). La requête ne sort pas.
+export async function cveRag(
+  query: string,
+  k = 6,
+): Promise<Record<string, unknown>> {
+  const base = process.env.CVE_RAG_URL;
+  if (!base) return { error: "CVE_RAG_URL non configurée (service RAG absent)." };
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/search`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query, k }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return { error: `RAG HTTP ${res.status}` };
+    return (await res.json()) as Record<string, unknown>;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function cveDetail(cveId: string): Promise<Record<string, unknown>> {
   const d = await nvd(new URLSearchParams({ cveId }));
   if (d.error) return d;
