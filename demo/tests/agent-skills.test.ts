@@ -82,6 +82,8 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(catalog.get("network-origin-analysis")?.body).toContain("nom technique du job");
     expect(catalog.get("security-signal-analysis")?.body).toContain("temporal-correlation");
     expect(catalog.get("temporal-correlation")?.body).toContain("MIN/MAX lexicographique");
+    expect(catalog.get("temporal-correlation")?.body).toContain("jours actifs");
+    expect(catalog.get("temporal-correlation")?.body).toContain("écart-type nul");
     expect(catalog.get("business-metrics")?.body).toContain("concaténation avec NULL");
     expect(catalog.get("historical-backlog")?.body).toContain("échantillon");
   });
@@ -155,6 +157,9 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(source).toContain(
       "object_preview n'est jamais nécessaire pour établir qu'un transfert a eu lieu",
     );
+    expect(source).toContain("job_name seul ne prouve jamais le service");
+    expect(source).toContain("remote_port est le port source");
+    expect(source).toContain("jours actifs seulement");
   });
 
   test("décrit une stratégie SQL métadonnées d'abord", () => {
