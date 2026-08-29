@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   DETERMINISTIC_CALCULATION_PROTOCOL,
   runArithmeticBatch,
@@ -155,5 +157,24 @@ describe("dates déterministes", () => {
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("INTERDICTION ABSOLUE");
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("ne calcule jamais toi-même");
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("date_calculator");
+  });
+});
+
+describe("intégration runtime", () => {
+  test("expose les deux tools obligatoires dans les deux workspaces", () => {
+    const source = readFileSync(join(process.cwd(), "lib/tools.ts"), "utf8");
+
+    expect(source).toContain("calculator: tool({");
+    expect(source).toContain("date_calculator: tool({");
+    expect(source).toContain("OBLIGATOIRE pour toute valeur arithmétique dérivée");
+    expect(source).toContain("OBLIGATOIRE pour toute différence ou conversion de date/durée");
+    expect(source.match(/\.\.\.deterministicCalculationTools\(ctx\)/g)).toHaveLength(2);
+  });
+
+  test("injecte le protocole dans les deux prompts système", () => {
+    const source = readFileSync(join(process.cwd(), "app/api/chat/route.ts"), "utf8");
+
+    expect(source).toContain('from "@/lib/deterministic-calculation"');
+    expect(source.match(/\$\{DETERMINISTIC_CALCULATION_PROTOCOL\}/g)).toHaveLength(2);
   });
 });

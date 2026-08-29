@@ -15,6 +15,7 @@ import { getProfile, type Profile } from "@/lib/profiles";
 import { getModel } from "@/lib/models";
 import { audit, newTraceId } from "@/lib/audit";
 import { SKILL_SELECTION_PROTOCOL } from "@/lib/agent-skills";
+import { DETERMINISTIC_CALCULATION_PROTOCOL } from "@/lib/deterministic-calculation";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -255,8 +256,8 @@ export async function POST(req: Request) {
     // auto-détection de la syntaxe SQL.
     const system =
       profile.workspace === "gestion"
-        ? `${GESTION_SYSTEM_PROMPT}\n\n${SKILL_SELECTION_PROTOCOL}\n\nDATE DU JOUR : ${today}.\n\n${gestionWebBlock}\n\n${gestionProfileBlock(profile)}`
-        : `${SYSTEM_PROMPT}\n\n${SKILL_SELECTION_PROTOCOL}\n\n${dateBlock}\n\n${webBlock}\n\n${profileBlock(profile)}`;
+        ? `${GESTION_SYSTEM_PROMPT}\n\n${SKILL_SELECTION_PROTOCOL}\n\n${DETERMINISTIC_CALCULATION_PROTOCOL}\n\nDATE DU JOUR : ${today}.\n\n${gestionWebBlock}\n\n${gestionProfileBlock(profile)}`
+        : `${SYSTEM_PROMPT}\n\n${SKILL_SELECTION_PROTOCOL}\n\n${DETERMINISTIC_CALCULATION_PROTOCOL}\n\n${dateBlock}\n\n${webBlock}\n\n${profileBlock(profile)}`;
 
     // Pour les modèles TEE : on capture l'id de complétion du provider (dernier
     // step = réponse finale) afin de récupérer la signature d'attestation côté client.

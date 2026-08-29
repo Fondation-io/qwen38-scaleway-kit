@@ -7,6 +7,12 @@ import { runQuery } from "@/lib/db";
 import { assessRisk, guardDb2 } from "@/lib/sql-guard";
 import { db2Call, db2Query } from "@/lib/db2";
 import { createSkillSession, getSkillCatalog, skillCatalogSummary } from "@/lib/agent-skills";
+import {
+  arithmeticBatchSchema,
+  dateBatchSchema,
+  runArithmeticBatch,
+  runDateBatch,
+} from "@/lib/deterministic-calculation";
 import type { Profile, ProfilePolicy, Workspace } from "@/lib/profiles";
 import { audit } from "@/lib/audit";
 import {
@@ -170,6 +176,23 @@ function makeLoadSkillTool(ctx: ToolContext, workspace: Workspace) {
   });
 }
 
+function deterministicCalculationTools(ctx: ToolContext) {
+  return {
+    calculator: tool({
+      description:
+        "OBLIGATOIRE pour toute valeur arithmétique dérivée, même triviale : somme, différence, produit, division, moyenne, médiane, minimum, maximum, ratio, pourcentage, évolution ou arrondi. Fournis les nombres comme chaînes décimales et réutilise exactement le résultat retourné ; ne calcule jamais toi-même.",
+      inputSchema: arithmeticBatchSchema,
+      execute: traced(ctx, "calculator", async (args) => runArithmeticBatch(args)),
+    }),
+    date_calculator: tool({
+      description:
+        "OBLIGATOIRE pour toute différence ou conversion de date/durée et pour ajouter ou soustraire une durée. Les dates simples sont interprétées en UTC ; tout timestamp doit inclure Z ou un décalage explicite. Réutilise exactement le résultat retourné ; ne calcule jamais toi-même.",
+      inputSchema: dateBatchSchema,
+      execute: traced(ctx, "date_calculator", async (args) => runDateBatch(args)),
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Workspace GESTION : outils sur la base Db2 réelle (GESTION/OLIST) via la
 // passerelle db2-gw. La gate Db2 est choisie par le WORKSPACE (jamais par la
@@ -206,6 +229,7 @@ export function makeGestionTools(ctx: ToolContext, opts: { allowWebSearch?: bool
 
   return {
     load_skill: makeLoadSkillTool(ctx, "gestion"),
+    ...deterministicCalculationTools(ctx),
     sql_query: tool({
       description:
         "Exécute une requête SQL sur la base de gestion Db2 (schéma OLIST). SELECT/WITH uniquement — toute écriture passe par set_order_status ou record_payment. La requête s'exécute avec le compte Db2 du profil actif : un objet hors habilitation est refusé par la base (SQL0551N). Dialecte Db2 natif (FETCH FIRST n ROWS ONLY, YEAR(), MONTH(), DECIMAL()).",
@@ -275,6 +299,7 @@ export function makeGestionTools(ctx: ToolContext, opts: { allowWebSearch?: bool
 export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
   return {
     load_skill: makeLoadSkillTool(ctx, "security"),
+    ...deterministicCalculationTools(ctx),
     // sql_query est un tool SERVEUR : les requêtes NON sensibles s'exécutent
     // directement DANS le run streamText (pas de round-trip client), ce qui
     // permet au modèle d'enchaîner N requêtes en UNE génération — donc UN seul
