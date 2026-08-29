@@ -100,6 +100,9 @@ describe("catalogue de skills runtime Qwen", () => {
 
   test("le protocole borne et subordonne les skills aux permissions", () => {
     expect(SKILL_SELECTION_PROTOCOL).toContain("load_skill");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("PREMIER appel d'outil");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("plus d'une requête");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("N'utilise aucun outil métier avant");
     expect(SKILL_SELECTION_PROTOCOL).toContain("deux skills maximum");
     expect(SKILL_SELECTION_PROTOCOL).toContain("n'étend jamais tes permissions");
     expect(SKILL_SELECTION_PROTOCOL).toContain("ne recharge jamais");
