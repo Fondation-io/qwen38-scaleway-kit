@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { FileText, MessagesSquare } from "lucide-react";
+import { Download, FileText, MessagesSquare } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/github";
 import {
   Sidebar,
@@ -48,6 +48,26 @@ export function ThreadListSidebar({ ...props }: React.ComponentProps<typeof Side
       {props.collapsible !== "none" && <SidebarRail />}
       <SidebarFooter className="aui-sidebar-footer border-t">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="lg"
+              render={
+                <a
+                  href="/documents/runbook-labs-securite-agents-ibmi-10-scenarios.md"
+                  download
+                  aria-label="Télécharger le runbook exécutable au format Markdown"
+                />
+              }
+            >
+              <div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                <Download className="aui-sidebar-footer-icon size-4" />
+              </div>
+              <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
+                <span className="aui-sidebar-footer-title font-semibold">Runbook exécutable</span>
+                <span>10 scénarios · Markdown</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
