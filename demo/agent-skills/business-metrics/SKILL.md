@@ -17,7 +17,7 @@ workspaces: [gestion]
 - Précise si le chiffre d'affaires inclut prix, fret, annulations ou remboursements.
 - Calcule les ratios, évolutions et nombres de transitions avec `calculator` depuis les agrégats retournés, puis recopie exactement les valeurs du tool.
 - Lorsqu'un ratio dépend d'une somme du même batch, référence cette somme avec `{ref:"id"}` ; ne retape jamais de mémoire le total intermédiaire.
-- Pour écrire « X dépasse Y de ... % », appelle `percentage_change` avec `values: [Y, X]` (base d'abord), puis conserve exactement le signe renvoyé.
+- Pour écrire « X dépasse Y de ... % », appelle `percentage_change` avec `values: [Y, X]`, `baseLabel: "Y"` et `comparedLabel: "X"`, puis recopie mot pour mot `canonicalStatement`. Si tu veux présenter la phrase inverse, recopie `reverseStatement` ; ne réinterprète jamais le même pourcentage en inversant les sujets.
 - Conserve les catégories NULL ou non traduites dans un groupe explicite.
 - Une concaténation avec NULL reste NULL : distingue explicitement « non renseigné » de « non traduit » avant l'agrégation.
 - Dès que tu écris « je calcule », appelle `calculator` immédiatement dans le même tour ; ne termine jamais sur une intention de calcul.

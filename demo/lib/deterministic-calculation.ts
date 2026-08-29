@@ -11,6 +11,7 @@ export const DETERMINISTIC_CALCULATION_PROTOCOL = `CALCULS DÉTERMINISTES — IN
 - Si un calcul dépend d'un résultat précédent du même batch, utilise {ref:"id"}. Ne recopie et ne devine jamais cet intermédiaire.
 - Dès que tu annonces un calcul, appelle le tool dans le même tour ; ne termine jamais sur une intention de calcul.
 - Si le tool échoue ou refuse, signale l'impossibilité ; ne calcule jamais à sa place.
+- Pour percentage_change, fournis baseLabel et comparedLabel, puis recopie mot pour mot canonicalStatement ou reverseStatement. N'inverse jamais toi-même les sujets ou le sens d'un pourcentage.
 - Avant la réponse finale, vérifie que chaque valeur dérivée publiée possède un résultat de tool explicite.`;
 
 const decimalString = z
@@ -25,34 +26,51 @@ const arithmeticOperand = z.union([
   z.object({ ref: z.string().min(1).max(80) }).strict(),
 ]);
 
+const arithmeticValues = z
+  .array(arithmeticOperand)
+  .min(1)
+  .max(200)
+  .describe(
+    "Opérandes dans l'ordre. Pour percentage_change : values = [base, nouvelle valeur], résultat = (nouvelle - base) / base × 100. Pour subtract/divide/ratio : [première valeur, seconde valeur].",
+  );
+
+const arithmeticCommonFields = {
+  id: z.string().min(1).max(80),
+  values: arithmeticValues,
+  scale: resultScale,
+};
+
 export const arithmeticBatchSchema = z.object({
   calculations: z
     .array(
-      z.object({
-        id: z.string().min(1).max(80),
-        operation: z.enum([
-          "sum",
-          "subtract",
-          "multiply",
-          "divide",
-          "average",
-          "median",
-          "min",
-          "max",
-          "ratio",
-          "percent_of",
-          "percentage_change",
-          "round",
-        ]),
-        values: z
-          .array(arithmeticOperand)
-          .min(1)
-          .max(200)
-          .describe(
-            "Opérandes dans l'ordre. Pour percentage_change : values = [base, nouvelle valeur], résultat = (nouvelle - base) / base × 100. Pour subtract/divide/ratio : [première valeur, seconde valeur].",
-          ),
-        scale: resultScale,
-      }),
+      z.union([
+        z.object({
+          ...arithmeticCommonFields,
+          operation: z.literal("percentage_change"),
+          baseLabel: z.string().min(1).max(120).describe("Libellé de values[0], la base"),
+          comparedLabel: z
+            .string()
+            .min(1)
+            .max(120)
+            .describe("Libellé de values[1], la valeur comparée à la base"),
+        }),
+        z.object({
+          ...arithmeticCommonFields,
+          operation: z.enum([
+            "sum",
+            "subtract",
+            "multiply",
+            "divide",
+            "average",
+            "median",
+            "min",
+            "max",
+            "ratio",
+            "percent_of",
+            "round",
+          ]),
+        }),
+      ]),
     )
     .min(1)
     .max(100),
@@ -68,6 +86,12 @@ export interface ArithmeticBatchResult {
     value: string;
     scale: number;
     resolvedValues: string[];
+    comparison?: {
+      baseLabel: string;
+      comparedLabel: string;
+      canonicalStatement: string;
+      reverseStatement: string;
+    };
   }>;
 }
 
@@ -144,6 +168,22 @@ function fixed(value: Decimal, scale: number): string {
   return normalized.toDecimalPlaces(scale, Decimal.ROUND_HALF_UP).toFixed(scale);
 }
 
+function comparisonStatement(
+  subjectLabel: string,
+  referenceLabel: string,
+  signedPercentage: Decimal,
+  scale: number,
+): string {
+  const magnitude = fixed(signedPercentage.abs(), scale);
+  if (signedPercentage.isPositive()) {
+    return `${subjectLabel} dépasse ${referenceLabel} de ${magnitude} %.`;
+  }
+  if (signedPercentage.isNegative()) {
+    return `${subjectLabel} est inférieur à ${referenceLabel} de ${magnitude} %.`;
+  }
+  return `${subjectLabel} est égal à ${referenceLabel} (écart de ${magnitude} %).`;
+}
+
 export function runArithmeticBatch(input: unknown): ArithmeticBatchResult {
   const parsed = arithmeticBatchSchema.parse(input);
   const previous = new Map<string, string>();
@@ -161,15 +201,43 @@ export function runArithmeticBatch(input: unknown): ArithmeticBatchResult {
       }
       return value;
     });
-    const value = fixed(calculateArithmetic(calculation, resolvedValues), calculation.scale);
+    const calculated = calculateArithmetic(calculation, resolvedValues);
+    const value = fixed(calculated, calculation.scale);
     previous.set(calculation.id, value);
-    results.push({
+    const result: ArithmeticBatchResult["results"][number] = {
       id: calculation.id,
       operation: calculation.operation,
       value,
       scale: calculation.scale,
       resolvedValues,
-    });
+    };
+    if (calculation.operation === "percentage_change") {
+      const base = new Decimal(resolvedValues[0]!);
+      const compared = new Decimal(resolvedValues[1]!);
+      const reversePercentage = compared.isZero()
+        ? null
+        : base.minus(compared).dividedBy(compared).times(100);
+      result.comparison = {
+        baseLabel: calculation.baseLabel,
+        comparedLabel: calculation.comparedLabel,
+        canonicalStatement: comparisonStatement(
+          calculation.comparedLabel,
+          calculation.baseLabel,
+          calculated,
+          calculation.scale,
+        ),
+        reverseStatement:
+          reversePercentage === null
+            ? `Le pourcentage inverse de ${calculation.baseLabel} par rapport à ${calculation.comparedLabel} est indéfini car la base inverse vaut zéro.`
+            : comparisonStatement(
+                calculation.baseLabel,
+                calculation.comparedLabel,
+                reversePercentage,
+                calculation.scale,
+              ),
+      };
+    }
+    results.push(result);
   }
 
   return {

@@ -70,8 +70,10 @@ describe("calculs arithmétiques déterministes", () => {
         {
           id: "growth",
           operation: "percentage_change",
-          values: ["127482.37", "271239.32"],
-          scale: 1,
+          values: ["163.30", "230.09"],
+          baseLabel: "panier santé/beauté",
+          comparedLabel: "panier montres",
+          scale: 2,
         },
         {
           id: "median",
@@ -83,7 +85,28 @@ describe("calculs arithmétiques déterministes", () => {
       ],
     });
 
-    expect(result.results.map((entry) => entry.value)).toEqual(["163.30", "112.8", "4.0", "2.35"]);
+    expect(result.results.map((entry) => entry.value)).toEqual(["163.30", "40.90", "4.0", "2.35"]);
+    expect(result.results[1]?.comparison).toEqual({
+      baseLabel: "panier santé/beauté",
+      comparedLabel: "panier montres",
+      canonicalStatement: "panier montres dépasse panier santé/beauté de 40.90 %.",
+      reverseStatement: "panier santé/beauté est inférieur à panier montres de 29.03 %.",
+    });
+  });
+
+  test("refuse un pourcentage non rattaché à ses libellés métier", () => {
+    expect(() =>
+      runArithmeticBatch({
+        calculations: [
+          {
+            id: "ambiguous",
+            operation: "percentage_change",
+            values: ["163.30", "230.09"],
+            scale: 2,
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   test("réutilise un résultat précédent sans recopier le nombre", () => {
@@ -205,6 +228,7 @@ describe("dates déterministes", () => {
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("date_calculator");
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("appelle le tool dans le même tour");
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("ne termine jamais sur une intention");
+    expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("recopie mot pour mot canonicalStatement");
   });
 });
 
@@ -215,7 +239,8 @@ describe("intégration runtime", () => {
     expect(source).toContain("calculator: tool({");
     expect(source).toContain("date_calculator: tool({");
     expect(source).toContain("OBLIGATOIRE pour toute valeur arithmétique dérivée");
-    expect(source).toContain("percentage_change : values = [base, nouvelle valeur]");
+    expect(source).toContain("baseLabel/comparedLabel sont obligatoires");
+    expect(source).toContain("recopie mot pour mot canonicalStatement ou reverseStatement");
     expect(source).toContain("OBLIGATOIRE pour toute différence ou conversion de date/durée");
     expect(source.match(/\.\.\.deterministicCalculationTools\(ctx\)/g)).toHaveLength(2);
   });
