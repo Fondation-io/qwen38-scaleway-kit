@@ -66,7 +66,7 @@ describe("catalogue de skills runtime Qwen", () => {
 
   const skillRoot = join(process.cwd(), "agent-skills");
 
-  test("charge les sept skills versionnées", () => {
+  test("charge les huit skills versionnées", () => {
     const catalog = readSkillCatalog(skillRoot);
     expect([...catalog.keys()].sort()).toEqual([
       "business-metrics",
@@ -74,12 +74,17 @@ describe("catalogue de skills runtime Qwen", () => {
       "governed-write",
       "historical-backlog",
       "network-origin-analysis",
+      "profile-swap-investigation",
       "security-signal-analysis",
       "temporal-correlation",
     ]);
     expect(catalog.get("data-reliability")?.body).toContain("calcul dérivé");
     expect(catalog.get("network-origin-analysis")?.body).toContain("corpus distincts");
     expect(catalog.get("network-origin-analysis")?.body).toContain("nom technique du job");
+    expect(catalog.get("profile-swap-investigation")?.body).toContain("profils sources et cibles");
+    expect(catalog.get("profile-swap-investigation")?.body).toContain("jours actifs");
+    expect(catalog.get("profile-swap-investigation")?.body).toContain("object_preview");
+    expect(catalog.get("profile-swap-investigation")?.body).toContain("calculator");
     expect(catalog.get("security-signal-analysis")?.body).toContain("temporal-correlation");
     expect(catalog.get("temporal-correlation")?.body).toContain("MIN/MAX lexicographique");
     expect(catalog.get("temporal-correlation")?.body).toContain("jours actifs");
