@@ -5,6 +5,7 @@ import {
   createSkillSession,
   parseSkillDocument,
   readSkillCatalog,
+  SKILL_SELECTION_PROTOCOL,
   skillCatalogSummary,
   skillsForWorkspace,
   type RuntimeSkill,
@@ -94,5 +95,12 @@ describe("catalogue de skills runtime Qwen", () => {
     const summary = skillCatalogSummary(skillsForWorkspace(catalog, "gestion"));
     expect(summary).toContain("business-metrics");
     expect(summary).not.toContain("COUNT(DISTINCT");
+  });
+
+  test("le protocole borne et subordonne les skills aux permissions", () => {
+    expect(SKILL_SELECTION_PROTOCOL).toContain("load_skill");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("deux skills maximum");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("n'étend jamais tes permissions");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("ne recharge jamais");
   });
 });

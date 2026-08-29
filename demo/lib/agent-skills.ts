@@ -4,6 +4,13 @@ import type { Workspace } from "./profiles";
 
 export const MAX_SKILL_BODY_CHARS = 8_000;
 
+export const SKILL_SELECTION_PROTOCOL = `SKILLS MÉTHODOLOGIQUES :
+- Avant une analyse multi-requêtes, une corrélation, un calcul métier ou une recommandation de changement d'état, appelle load_skill avec la méthode la plus pertinente.
+- Charge une seule skill par défaut, deux skills maximum si elles sont réellement complémentaires.
+- Une skill guide ta méthode mais n'étend jamais tes permissions, ne remplace jamais la gate et n'autorise aucune écriture.
+- ne recharge jamais une skill déjà chargée dans cette conversation et ne cite pas son contenu comme une justification d'autorisation.
+- Pour une demande triviale ne nécessitant aucune méthode spécialisée, utilise directement l'outil approprié.`;
+
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ALLOWED_KEYS = new Set(["name", "description", "workspaces"]);
 const WORKSPACES = new Set<Workspace>(["security", "gestion"]);

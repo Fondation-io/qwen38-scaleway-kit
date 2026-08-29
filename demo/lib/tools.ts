@@ -6,7 +6,8 @@ import { z } from "zod";
 import { runQuery } from "@/lib/db";
 import { assessRisk, guardDb2 } from "@/lib/sql-guard";
 import { db2Call, db2Query } from "@/lib/db2";
-import type { Profile, ProfilePolicy } from "@/lib/profiles";
+import { createSkillSession, getSkillCatalog, skillCatalogSummary } from "@/lib/agent-skills";
+import type { Profile, ProfilePolicy, Workspace } from "@/lib/profiles";
 import { audit } from "@/lib/audit";
 import {
   webSearch,
@@ -55,8 +56,7 @@ function summarize(out: unknown): Record<string, unknown> {
   if (out && typeof out === "object") {
     const o = out as Record<string, unknown>;
     if (typeof o.error === "string") return { error: o.error };
-    if (Array.isArray(o.rows))
-      return { rowCount: o.rowCount ?? (o.rows as unknown[]).length };
+    if (Array.isArray(o.rows)) return { rowCount: o.rowCount ?? (o.rows as unknown[]).length };
     if (typeof o.chartUrl === "string") return { chartUrl: o.chartUrl };
   }
   return {};
@@ -79,9 +79,7 @@ function capRows(result: { columns: string[]; rows: unknown[]; rowCount: number 
   while (rows.length > 5 && JSON.stringify(rows).length > MAX_MODEL_CHARS) {
     rows = rows.slice(0, Math.ceil(rows.length * 0.7));
   }
-  return rows.length === result.rows.length
-    ? result
-    : { ...result, rows, truncated: true };
+  return rows.length === result.rows.length ? result : { ...result, rows, truncated: true };
 }
 
 // Enveloppe chaque tool : journalise appel + résultat/erreur + durée, et
@@ -131,10 +129,8 @@ function webExternalTools(ctx: ToolContext) {
         query: z.string().describe("Requête de recherche"),
         num: z.number().min(1).max(10).optional().describe("Nombre de résultats (défaut 6)"),
       }),
-      execute: traced(
-        ctx,
-        "web_search",
-        ({ query, num }: { query: string; num?: number }) => webSearch(query, num),
+      execute: traced(ctx, "web_search", ({ query, num }: { query: string; num?: number }) =>
+        webSearch(query, num),
       ),
     }),
     ask_perplexity: tool({
@@ -143,10 +139,8 @@ function webExternalTools(ctx: ToolContext) {
       inputSchema: z.object({
         question: z.string().describe("Question en langage naturel"),
       }),
-      execute: traced(
-        ctx,
-        "ask_perplexity",
-        ({ question }: { question: string }) => askPerplexity(question),
+      execute: traced(ctx, "ask_perplexity", ({ question }: { question: string }) =>
+        askPerplexity(question),
       ),
     }),
     fetch_url: tool({
@@ -160,6 +154,22 @@ function webExternalTools(ctx: ToolContext) {
   };
 }
 
+function makeLoadSkillTool(ctx: ToolContext, workspace: Workspace) {
+  const session = createSkillSession(getSkillCatalog(), workspace);
+  const names = session.skills.map((skill) => skill.name);
+  if (names.length === 0) {
+    throw new Error(`Aucune skill disponible pour le workspace ${workspace}`);
+  }
+
+  return tool({
+    description: `Charge une méthode d'analyse de confiance adaptée au contexte. Catalogue autorisé :\n${skillCatalogSummary(session.skills)}`,
+    inputSchema: z.object({
+      name: z.enum(names as [string, ...string[]]).describe("Skill méthodologique à charger"),
+    }),
+    execute: traced(ctx, "load_skill", async ({ name }: { name: string }) => session.load(name)),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Workspace GESTION : outils sur la base Db2 réelle (GESTION/OLIST) via la
 // passerelle db2-gw. La gate Db2 est choisie par le WORKSPACE (jamais par la
@@ -167,10 +177,7 @@ function webExternalTools(ctx: ToolContext) {
 // écritures ne passent QUE par set_order_status / record_payment (procédures
 // stockées paramétrées), avec carte d'approbation pour l'opérateur.
 // ---------------------------------------------------------------------------
-export function makeGestionTools(
-  ctx: ToolContext,
-  opts: { allowWebSearch?: boolean } = {},
-) {
+export function makeGestionTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
   const profile = ctx.profile;
   const role = profile?.db2Role ?? "analyste";
   const writeAccess = profile?.writeAccess ?? "none";
@@ -198,6 +205,7 @@ export function makeGestionTools(
   }
 
   return {
+    load_skill: makeLoadSkillTool(ctx, "gestion"),
     sql_query: tool({
       description:
         "Exécute une requête SQL sur la base de gestion Db2 (schéma OLIST). SELECT/WITH uniquement — toute écriture passe par set_order_status ou record_payment. La requête s'exécute avec le compte Db2 du profil actif : un objet hors habilitation est refusé par la base (SQL0551N). Dialecte Db2 natif (FETCH FIRST n ROWS ONLY, YEAR(), MONTH(), DECIMAL()).",
@@ -255,12 +263,8 @@ export function makeGestionTools(
       execute: traced(
         ctx,
         "record_payment",
-        (args: {
-          order_id: string;
-          payment_type: string;
-          installments: number;
-          value: number;
-        }) => framedWrite("RECORD_PAYMENT", { ...args }),
+        (args: { order_id: string; payment_type: string; installments: number; value: number }) =>
+          framedWrite("RECORD_PAYMENT", { ...args }),
       ),
     }),
 
@@ -270,6 +274,7 @@ export function makeGestionTools(
 
 export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
   return {
+    load_skill: makeLoadSkillTool(ctx, "security"),
     // sql_query est un tool SERVEUR : les requêtes NON sensibles s'exécutent
     // directement DANS le run streamText (pas de round-trip client), ce qui
     // permet au modèle d'enchaîner N requêtes en UNE génération — donc UN seul
@@ -297,32 +302,23 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
       description:
         "Retourne le profil des données (table data_profile) : pour chaque colonne, nombre de lignes, valeurs distinctes, nulls, min/max et valeurs les plus fréquentes. Filtrable par table.",
       inputSchema: z.object({
-        table: z
-          .string()
-          .optional()
-          .describe("Nom de table pour filtrer (optionnel)"),
+        table: z.string().optional().describe("Nom de table pour filtrer (optionnel)"),
       }),
-      execute: traced(
-        ctx,
-        "describe_data",
-        async ({ table }: { table?: string }) => {
-          const where = table
-            ? ` WHERE table_name = '${table.replace(/'/g, "''")}'`
-            : "";
-          const res = runQuery(
-            `SELECT table_name, column_name, n_rows, n_distinct, n_null, min_value, max_value, top_values FROM data_profile${where}`,
-          );
-          // data_profile ne couvre QUE cert_* et guide_evidence. Pour une table
-          // non profilée (vues SECAUDIT.*, tables HONEYPOT.*), on renvoie un indice
-          // actionnable au lieu d'un résultat vide qui fait boucler l'agent.
-          if (res.rowCount === 0) {
-            return {
-              note: `Aucun profil pour "${table ?? "(toutes)"}". describe_data ne couvre QUE cert_* et guide_evidence. Les vues SECAUDIT.* (QAUDJRN_SIGNON/TRANSFER/OBJECT/MAIL/PROFILE_SWAP, USER_PROFILES, DAILY_BASELINE) et les tables HONEYPOT.* (qaudjrn_pw/sk/im) NE SONT PAS profilées : interroge-les DIRECTEMENT au SQL (COUNT(*), DISTINCT, GROUP BY), n'appelle pas describe_data dessus.`,
-            };
-          }
-          return res;
-        },
-      ),
+      execute: traced(ctx, "describe_data", async ({ table }: { table?: string }) => {
+        const where = table ? ` WHERE table_name = '${table.replace(/'/g, "''")}'` : "";
+        const res = runQuery(
+          `SELECT table_name, column_name, n_rows, n_distinct, n_null, min_value, max_value, top_values FROM data_profile${where}`,
+        );
+        // data_profile ne couvre QUE cert_* et guide_evidence. Pour une table
+        // non profilée (vues SECAUDIT.*, tables HONEYPOT.*), on renvoie un indice
+        // actionnable au lieu d'un résultat vide qui fait boucler l'agent.
+        if (res.rowCount === 0) {
+          return {
+            note: `Aucun profil pour "${table ?? "(toutes)"}". describe_data ne couvre QUE cert_* et guide_evidence. Les vues SECAUDIT.* (QAUDJRN_SIGNON/TRANSFER/OBJECT/MAIL/PROFILE_SWAP, USER_PROFILES, DAILY_BASELINE) et les tables HONEYPOT.* (qaudjrn_pw/sk/im) NE SONT PAS profilées : interroge-les DIRECTEMENT au SQL (COUNT(*), DISTINCT, GROUP BY), n'appelle pas describe_data dessus.`,
+          };
+        }
+        return res;
+      }),
     }),
 
     user_timeline: tool({
@@ -336,15 +332,8 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
       execute: traced(
         ctx,
         "user_timeline",
-        async ({
-          user,
-          start,
-          end,
-        }: {
-          user: string;
-          start?: string;
-          end?: string;
-        }) => runChart("user_timeline", { user, start, end }),
+        async ({ user, start, end }: { user: string; start?: string; end?: string }) =>
+          runChart("user_timeline", { user, start, end }),
       ),
     }),
 
@@ -359,15 +348,8 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
       execute: traced(
         ctx,
         "transfer_sessions",
-        async ({
-          user,
-          start,
-          end,
-        }: {
-          user: string;
-          start?: string;
-          end?: string;
-        }) => runChart("transfer_sessions", { user, start, end }),
+        async ({ user, start, end }: { user: string; start?: string; end?: string }) =>
+          runChart("transfer_sessions", { user, start, end }),
       ),
     }),
 
@@ -388,15 +370,8 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
       execute: traced(
         ctx,
         "after_hours",
-        async ({
-          start,
-          end,
-          top,
-        }: {
-          start?: string;
-          end?: string;
-          top?: number;
-        }) => runChart("after_hours", { start, end, top }),
+        async ({ start, end, top }: { start?: string; end?: string; top?: number }) =>
+          runChart("after_hours", { start, end, top }),
       ),
     }),
 
@@ -408,12 +383,7 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
           .enum(["signon", "mail", "transfer_session", "object_transfer"])
           .optional()
           .describe("Flux analysé (défaut transfer_session)"),
-        sigma: z
-          .number()
-          .min(1)
-          .max(10)
-          .optional()
-          .describe("Seuil en écarts-types (défaut 3)"),
+        sigma: z.number().min(1).max(10).optional().describe("Seuil en écarts-types (défaut 3)"),
         start: dateSchema.describe("Date de début YYYY-MM-DD"),
         end: dateSchema.describe("Date de fin YYYY-MM-DD"),
       }),
@@ -460,10 +430,8 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
         query: z.string().describe("Requête sémantique, de préférence en anglais"),
         k: z.number().min(1).max(20).optional().describe("Nb de résultats (défaut 6)"),
       }),
-      execute: traced(
-        ctx,
-        "cve_rag",
-        ({ query, k }: { query: string; k?: number }) => cveRag(query, k),
+      execute: traced(ctx, "cve_rag", ({ query, k }: { query: string; k?: number }) =>
+        cveRag(query, k),
       ),
     }),
     cve_detail: tool({

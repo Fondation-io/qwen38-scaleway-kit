@@ -14,6 +14,7 @@ import { makeGestionTools, makeTools } from "@/lib/tools";
 import { getProfile, type Profile } from "@/lib/profiles";
 import { getModel } from "@/lib/models";
 import { audit, newTraceId } from "@/lib/audit";
+import { SKILL_SELECTION_PROTOCOL } from "@/lib/agent-skills";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -170,9 +171,7 @@ function profileBlock(profile: Profile): string {
 function resolveModel(req: Request) {
   const entry = getModel(req.headers.get("x-demo-model"));
   const baseURL =
-    entry.baseUrl ??
-    (entry.baseUrlEnv ? process.env[entry.baseUrlEnv] : undefined) ??
-    "";
+    entry.baseUrl ?? (entry.baseUrlEnv ? process.env[entry.baseUrlEnv] : undefined) ?? "";
   const client = createOpenAICompatible({
     name: entry.provider,
     baseURL,
@@ -256,8 +255,8 @@ export async function POST(req: Request) {
     // auto-détection de la syntaxe SQL.
     const system =
       profile.workspace === "gestion"
-        ? `${GESTION_SYSTEM_PROMPT}\n\nDATE DU JOUR : ${today}.\n\n${gestionWebBlock}\n\n${gestionProfileBlock(profile)}`
-        : `${SYSTEM_PROMPT}\n\n${dateBlock}\n\n${webBlock}\n\n${profileBlock(profile)}`;
+        ? `${GESTION_SYSTEM_PROMPT}\n\n${SKILL_SELECTION_PROTOCOL}\n\nDATE DU JOUR : ${today}.\n\n${gestionWebBlock}\n\n${gestionProfileBlock(profile)}`
+        : `${SYSTEM_PROMPT}\n\n${SKILL_SELECTION_PROTOCOL}\n\n${dateBlock}\n\n${webBlock}\n\n${profileBlock(profile)}`;
 
     // Pour les modèles TEE : on capture l'id de complétion du provider (dernier
     // step = réponse finale) afin de récupérer la signature d'attestation côté client.
@@ -326,11 +325,9 @@ export async function POST(req: Request) {
           // reasoningTokens n'est pas dans le type LanguageModelUsage de cette
           // version, mais certains providers le peuplent au runtime → lecture par
           // cast optionnel (sinon le split réflexion se fait côté client).
-          const reasoning =
-            (usage as { reasoningTokens?: number }).reasoningTokens ?? null;
+          const reasoning = (usage as { reasoningTokens?: number }).reasoningTokens ?? null;
           const costUsd =
-            (input / 1e6) * (entry.priceInPerM ?? 0) +
-            (output / 1e6) * (entry.priceOutPerM ?? 0);
+            (input / 1e6) * (entry.priceInPerM ?? 0) + (output / 1e6) * (entry.priceOutPerM ?? 0);
           writer.write({
             type: "data-usage",
             data: {
