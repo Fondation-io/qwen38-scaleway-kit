@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildSkillCatalog,
@@ -102,5 +103,11 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(SKILL_SELECTION_PROTOCOL).toContain("deux skills maximum");
     expect(SKILL_SELECTION_PROTOCOL).toContain("n'étend jamais tes permissions");
     expect(SKILL_SELECTION_PROTOCOL).toContain("ne recharge jamais");
+  });
+
+  test("inclut les SKILL.md dans le standalone de la route chat", () => {
+    const source = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+    expect(source).toContain('"/api/chat"');
+    expect(source).toContain("./agent-skills/**/SKILL.md");
   });
 });
