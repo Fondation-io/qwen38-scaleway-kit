@@ -21,6 +21,8 @@ workspaces: [security]
 - Corrèle des sources réseau sur la même adresse IP exacte et une fenêtre compatible, jamais par simple appartenance au même sous-réseau.
 - `cert_insiders` est une vérité terrain synthétique réservée au benchmark : ne la requête pas et ne l'utilise jamais comme preuve dans une investigation opérationnelle, sauf demande explicite d'évaluation du banc.
 - N'accède à un contenu sensible que s'il est indispensable au verdict demandé et qu'aucun agrégat ne suffit. Après un refus, conclus avec les métadonnées disponibles sans rejouer l'analyse.
+- Pour `SECAUDIT.QAUDJRN_OBJECT`, les métadonnées `timestamp`, `user_profile` et `object_name` suffisent à établir qu'un objet a été transféré. Ne sélectionne jamais `object_preview` sauf si l'utilisateur demande explicitement d'inspecter le contenu et si ce contenu est indispensable au verdict.
+- Toute comparaison dérivée avec une moyenne ou un écart-type passe par `calculator` : soustraction puis division. N'écris jamais un nombre de sigma estimé mentalement.
 - Arrête l'exploration lorsque les preuves suffisent au verdict ; vise six requêtes d'analyse et respecte le plafond serveur absolu.
 
 ## Interdits
@@ -29,6 +31,7 @@ workspaces: [security]
 - Ne recommande pas un blocage permanent à partir d'un signal unique non confirmé.
 - Ne qualifie pas un profil de bénin ou malveillant sur la seule foi d'un contenu textuel.
 - Ne demande pas une approbation de contenu sensible pour enrichir une conclusion déjà établie par des métadonnées.
+- Ne présente jamais la lecture de `object_preview` comme nécessaire pour confirmer l'existence d'un transfert déjà journalisé.
 
 ## Forme de la conclusion
 

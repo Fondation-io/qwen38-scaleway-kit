@@ -325,7 +325,7 @@ export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } =
     // rappelle request_sql_approval avec la même requête.
     sql_query: tool({
       description:
-        "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i (schémas SECAUDIT et HONEYPOT). Les requêtes d'agrégation/comptage s'exécutent DIRECTEMENT et renvoient les lignes. Si la requête lit du contenu sensible en clair sans agrégation, le résultat est {status:\"approval_required\"} : appelle alors request_sql_approval avec la MÊME requête pour la validation de l'analyste. Une requête refusée renvoie {blocked:true}. Formule une requête claire et autoportante.",
+        "Exécute une requête SQL en lecture seule (SELECT/WITH) sur la base d'audit Db2 for i (schémas SECAUDIT et HONEYPOT). MÉTADONNÉES D'ABORD : sélectionne uniquement les colonnes nécessaires. Ne sélectionne pas object_preview pour confirmer un transfert : timestamp, user_profile et object_name suffisent. Tout contenu sensible en clair exige à la fois une demande explicite de l'utilisateur et un besoin indispensable au verdict ; sinon conclus avec les métadonnées. Si une lecture sensible justifiée renvoie {status:\"approval_required\"}, appelle request_sql_approval avec la MÊME requête. Une requête refusée renvoie {blocked:true}. Formule une requête claire et autoportante.",
       inputSchema: z.object({
         sql: z.string().describe("Requête SQL (SELECT ou WITH ... SELECT)"),
       }),

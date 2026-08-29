@@ -133,8 +133,14 @@ describe("catalogue de skills runtime Qwen", () => {
 
     expect(network).toContain("adresse IP exacte");
     expect(network).toContain("sous-réseau");
+    expect(network).toContain("type_violation");
+    expect(network).toContain("User name not valid");
     expect(security).toContain("cert_insiders");
     expect(security).toContain("contenu sensible");
+    expect(security).toContain("object_preview");
+    expect(security).toContain("métadonnées");
+    expect(security).toContain("calculator");
+    expect(security).toContain("écart-type");
     expect(backlog).toContain("un avis ne prouve pas une livraison");
     expect(business).toContain("ne termine jamais sur une intention");
   });
@@ -143,6 +149,18 @@ describe("catalogue de skills runtime Qwen", () => {
     const source = readFileSync(join(process.cwd(), "app/api/chat/route.ts"), "utf8");
     expect(source).toContain("cert_insiders est réservée à l'évaluation");
     expect(source).toContain("ne la requête jamais pour une investigation opérationnelle");
+    expect(source.toLowerCase()).toContain(
+      "n'infère jamais son existence depuis l'apparence de user_name",
+    );
+    expect(source).toContain(
+      "object_preview n'est jamais nécessaire pour établir qu'un transfert a eu lieu",
+    );
+  });
+
+  test("décrit une stratégie SQL métadonnées d'abord", () => {
+    const source = readFileSync(join(process.cwd(), "lib/tools.ts"), "utf8");
+    expect(source).toContain("MÉTADONNÉES D'ABORD");
+    expect(source).toContain("Ne sélectionne pas object_preview");
   });
 
   test("le résumé ne divulgue pas le corps des skills", () => {

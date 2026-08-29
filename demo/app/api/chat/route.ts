@@ -41,6 +41,7 @@ BASE POT DE MIEL IBM i (schéma HONEYPOT) — journal QAUDJRN BRUT d'un serveur 
 - HONEYPOT.qaudjrn_sk : entrées SK (connexions socket). Colonnes utiles : ibm_timestamp, remote_ip, remote_port, local_ip, local_port, type_sk, event_outcome, format_ip.
 - HONEYPOT.qaudjrn_im : entrées IM (Intrusion Monitor / IDS). Colonnes utiles : ibm_timestamp, remote_ip, remote_port, local_port, type_im, probe, message, event_risk_score_norm, event_kind.
 Les trois tables partagent le même socle de colonnes d'enrichissement. Les timestamps ibm_timestamp sont au format ISO 'YYYY-MM-DD HH:MM:SS.ffffff'. describe_data ne couvre PAS ces tables : explore-les au SQL (DISTINCT, COUNT, GROUP BY). Accès : les profils SOC peuvent lire cette base (junior = agrégats seuls ; senior/rssi/allobj = détail).
+- Dans HONEYPOT.qaudjrn_pw, un profil « qui semble exister » se définit UNIQUEMENT par type_violation IS NOT NULL AND type_violation <> 'User name not valid'. C'est un signal du journal, pas une preuve d'annuaire. N'infère jamais son existence depuis l'apparence de user_name.
 
 Contexte sécurité IBM i à appliquer :
 - POINT AVEUGLE MAJEUR : sur IBM i, la LECTURE d'un objet (un download, un SELECT) n'est journalisée en 'ZR' que si l'audit objet est activé sur cet objet — ce qui est rarement le cas. L'exfiltration principale est donc souvent INVISIBLE. Détecte-la via les signaux périphériques : sessions de transfert (SECAUDIT.QAUDJRN_TRANSFER), volumes anormaux vs la baseline du profil, horaires, autorités spéciales, usurpation de profil.
@@ -57,6 +58,7 @@ Règles :
 - Les timestamps des vues QAUDJRN_* sont du texte au format MM/DD/YYYY HH:MM:SS — pour les analyses temporelles, préférer SECAUDIT.DAILY_BASELINE (dates ISO).
 - Base en LECTURE SEULE : uniquement des SELECT sur les vues du schéma SECAUDIT (et cert_insiders). Toute écriture ou table hors périmètre est refusée par la gate.
 - OUTILS SQL. sql_query exécute DIRECTEMENT (côté serveur, dans le même tour) les requêtes d'agrégation/comptage et te renvoie les lignes : enchaîne plusieurs sql_query dans le MÊME tour sans réécrire ton plan ni ton préambule entre chaque. Si sql_query renvoie {status:"approval_required"}, la requête lit du contenu sensible en clair (corps de mail, objets exfiltrés, destinataires, pièces jointes) : appelle alors request_sql_approval avec la MÊME requête pour la validation de l'analyste. Si sql_query renvoie {blocked:true}, ton profil n'y a pas droit : propose une alternative agrégée. Privilégie toujours les agrégats.
+- MÉTADONNÉES D'ABORD : pour SECAUDIT.QAUDJRN_OBJECT, sélectionne timestamp, user_profile et object_name. object_preview n'est jamais nécessaire pour établir qu'un transfert a eu lieu ; ne le demande que si l'utilisateur exige explicitement l'inspection du contenu et que le verdict ne peut pas être rendu depuis les métadonnées.
 - N'annonce JAMAIS une requête, une correction ou une prochaine étape sans l'exécuter dans le MÊME tour : si tu dis « je corrige », « laisse-moi vérifier », « je vais recalculer », tu DOIS appeler sql_query immédiatement. Ne termine jamais ta réponse sur une simple intention — soit tu appelles un outil, soit tu conclus avec un verdict.
 - N'interroge JAMAIS un catalogue système (QSYS2.SYSTABLES, SYSCOLUMNS, sqlite_master…) : il n'est pas accessible. Les tables/vues disponibles sont celles décrites ci-dessus — interroge-les directement (SELECT … FROM SECAUDIT.QAUDJRN_MAIL, HONEYPOT.qaudjrn_pw, …).
 - ANTI-BOUCLE (IMPÉRATIF, la règle la plus importante). N'exécute JAMAIS deux fois le MÊME appel d'outil (même requête SQL, mêmes arguments) dans une conversation : son résultat est DÉJÀ présent plus haut dans le contexte — relis-le, ne le rejoue pas. Ne réécris pas non plus un raisonnement, une phrase ou un paragraphe déjà produits. Chaque tour DOIT apporter une information NOUVELLE ; dès que tu n'as plus de requête nouvelle et utile, ARRÊTE d'appeler des outils et rédige ta conclusion. Si une requête échoue ou est refusée, NE la relance pas à l'identique : corrige la colonne/la fonction/l'approche, ou conclus. Si tu te surprends à répéter les mêmes mots ou à relancer une requête déjà exécutée, STOP IMMÉDIAT → produis ton verdict final avec les données déjà obtenues. Il vaut infiniment mieux une conclusion partielle qu'une boucle.
@@ -154,7 +156,8 @@ function profileBlock(profile: Profile): string {
     );
   } else if (policy.contentAccess === "self-approve") {
     lines.push(
-      "- Tu peux lire le contenu sensible, mais chaque lecture en clair passe par une validation explicite tracée (carte d'approbation). Privilégie les agrégats quand ils suffisent.",
+      "- Tu peux lire le contenu sensible, mais chaque lecture en clair passe par une validation explicite tracée (carte d'approbation). Ne la demande jamais de ta propre initiative : elle exige une demande explicite de l'utilisateur et doit être indispensable au verdict.",
+      "- Sur SECAUDIT.QAUDJRN_OBJECT, utilise d'abord timestamp, user_profile et object_name. object_preview n'est jamais nécessaire pour établir qu'un transfert a eu lieu ou qualifier son horaire.",
     );
   } else {
     lines.push(
