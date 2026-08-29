@@ -45,4 +45,12 @@ describe("documents téléchargeables", () => {
     expect(runbook.match(/^## [SG]\d\b/gm)).toHaveLength(10);
     expect(runbook).not.toContain("766a5da898ab8068");
   });
+
+  test("revalide le shell de l'application après un déploiement", () => {
+    const config = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+
+    expect(config).toContain('source: "/"');
+    expect(config).toContain('key: "Cache-Control"');
+    expect(config).toContain('value: "no-store, max-age=0, must-revalidate"');
+  });
 });
