@@ -222,9 +222,7 @@ export function runDateBatch(input: unknown): DateBatchResult {
       if (calculation.operation === "difference") {
         const start = parseIsoDate(calculation.start);
         const end = parseIsoDate(calculation.end);
-        const value = new Decimal(end)
-          .minus(start)
-          .dividedBy(UNIT_MILLISECONDS[calculation.unit]);
+        const value = new Decimal(end).minus(start).dividedBy(UNIT_MILLISECONDS[calculation.unit]);
         return {
           id: calculation.id,
           operation: calculation.operation,

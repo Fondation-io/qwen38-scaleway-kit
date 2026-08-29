@@ -83,20 +83,13 @@ describe("calculs arithmétiques déterministes", () => {
       ],
     });
 
-    expect(result.results.map((entry) => entry.value)).toEqual([
-      "163.30",
-      "112.8",
-      "4.0",
-      "2.35",
-    ]);
+    expect(result.results.map((entry) => entry.value)).toEqual(["163.30", "112.8", "4.0", "2.35"]);
   });
 
   test("refuse la division par zéro", () => {
     expect(() =>
       runArithmeticBatch({
-        calculations: [
-          { id: "zero", operation: "divide", values: ["1", "0"], scale: 2 },
-        ],
+        calculations: [{ id: "zero", operation: "divide", values: ["1", "0"], scale: 2 }],
       }),
     ).toThrow(/zéro/i);
   });
