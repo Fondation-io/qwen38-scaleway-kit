@@ -9,7 +9,7 @@ workspaces: [security, gestion]
 1. Définis l'entité comptée, le grain d'une ligne, la mesure et son dénominateur.
 2. Utilise les résultats des tools comme source de vérité et garde les sources distinctes tant qu'une clé commune n'est pas documentée.
 3. Réconcilie les totaux, sous-totaux, ratios et transitions avant de conclure.
-4. Effectue chaque calcul dérivé à partir des valeurs retournées et vérifie-le une seconde fois avant de l'écrire.
+4. Ne fais aucun calcul mental : envoie toute valeur dérivée au tool `calculator`, même si l'opération paraît triviale, puis recopie exactement son résultat.
 
 ## Contrôles obligatoires
 
@@ -18,6 +18,7 @@ workspaces: [security, gestion]
 - Signale les valeurs NULL, les groupes non classés et les sorties tronquées.
 - Identifie les corpus synthétiques, historiques, incomplets ou issus d'un autre système.
 - Mentionne les requêtes refusées ou en erreur ; ne présente jamais leur objet comme vérifié.
+- Chaque calcul dérivé publié — somme multi-lignes, différence, ratio, pourcentage, évolution, moyenne ou arrondi — doit être traçable à un résultat `calculator` ou à un calcul exécuté par Db2.
 
 ## Interdits
 
@@ -25,6 +26,7 @@ workspaces: [security, gestion]
 - Ne transforme pas une estimation, un nom de champ ou une convention supposée en fait.
 - Ne commente jamais de mémoire un ratio que les agrégats permettent de calculer.
 - N'invente pas une différence, un complément ou un taux absent des résultats contrôlés.
+- Si `calculator` échoue, signale l'impossibilité et n'essaie pas de le remplacer par ton raisonnement.
 
 ## Forme de la conclusion
 

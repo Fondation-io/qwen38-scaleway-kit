@@ -86,6 +86,22 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(catalog.get("historical-backlog")?.body).toContain("échantillon");
   });
 
+  test("interdit le calcul mental dans les skills analytiques", () => {
+    const catalog = readSkillCatalog(skillRoot);
+
+    for (const name of ["data-reliability", "business-metrics"]) {
+      const body = catalog.get(name)?.body ?? "";
+      expect(body).toContain("calculator");
+      expect(body.toLowerCase()).toContain("calcul mental");
+    }
+
+    for (const name of ["historical-backlog", "temporal-correlation"]) {
+      const body = catalog.get(name)?.body ?? "";
+      expect(body).toContain("date_calculator");
+      expect(body.toLowerCase()).toContain("calcul mental");
+    }
+  });
+
   test("isole les deux workspaces et bloque les rechargements", () => {
     const catalog = readSkillCatalog(skillRoot);
     const security = createSkillSession(catalog, "security");

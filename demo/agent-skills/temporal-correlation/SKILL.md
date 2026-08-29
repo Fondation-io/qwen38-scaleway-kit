@@ -7,7 +7,7 @@ workspaces: [security]
 ## Méthode
 
 1. Convertis le timestamp complet dans le dialecte disponible.
-2. Construis une borne inférieure et une borne supérieure autour de l'événement pivot.
+2. Fais construire la borne inférieure et la borne supérieure autour de l'événement pivot par le moteur SQL ou par `date_calculator`.
 3. Compare la fenêtre, la journée entière et la baseline lorsque ces niveaux existent.
 
 ## Contrôles obligatoires
@@ -15,6 +15,7 @@ workspaces: [security]
 - Gère les changements de jour, de mois et d'année.
 - Distingue les événements antérieurs, simultanés et postérieurs.
 - Vérifie les unités et la durée réelle de la fenêtre.
+- Ne fais aucun calcul mental de date, de durée ou de décalage : recopie exactement le résultat SQL ou `date_calculator` et mentionne l'unité.
 - Signale les timestamps invalides ou lexicographiquement ambigus.
 - Sur un timestamp texte non ISO, convertis avant le tri et les agrégats : un MIN/MAX lexicographique ne donne pas la première ou la dernière date.
 
@@ -23,6 +24,7 @@ workspaces: [security]
 - N'utilise pas la seule composante heure pour simuler une distance temporelle.
 - Ne transforme pas une proximité temporelle en causalité.
 - Ne masque pas l'absence d'événement dans une des sources demandées.
+- Si le moteur SQL et `date_calculator` refusent un timestamp, signale l'ambiguïté au lieu d'estimer la fenêtre.
 
 ## Forme de la conclusion
 
