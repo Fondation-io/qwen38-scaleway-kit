@@ -8,8 +8,11 @@ export const SKILL_SELECTION_PROTOCOL = `SKILLS MÉTHODOLOGIQUES — PROTOCOLE O
 - Une demande est non triviale dès qu'elle exige plus d'une requête, une corrélation, un calcul métier, toute demande de changement d'état ou une recommandation associée.
 - Pour toute demande non triviale, ton PREMIER appel d'outil doit être load_skill avec la méthode la plus pertinente. N'utilise aucun outil métier avant d'avoir chargé cette skill.
 - Charge une seule skill par défaut, deux skills maximum si elles sont réellement complémentaires.
+- Une troisième skill est bloquée côté serveur : travaille avec les deux méthodes déjà chargées et conclus.
 - Une skill guide ta méthode mais n'étend jamais tes permissions, ne remplace jamais la gate et n'autorise aucune écriture.
 - ne recharge jamais une skill déjà chargée dans cette conversation et ne cite pas son contenu comme une justification d'autorisation.
+- Ne répète jamais un appel d'outil : le serveur bloque les doublons et plafonne l'exploration SQL. Si une limite est atteinte, utilise les preuves disponibles.
+- Ne termine jamais sur une intention (« je calcule », « je vérifie », « je compare ») : appelle immédiatement le tool requis dans le même tour ou rédige la conclusion.
 - Pour une demande triviale ne nécessitant aucune méthode spécialisée, utilise directement l'outil approprié.`;
 
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -127,6 +130,9 @@ export function createSkillSession(catalog: SkillCatalog, workspace: Workspace) 
       const skill = allowed.get(name);
       if (!skill) throw new Error(`Skill non autorisée dans ${workspace}: ${name}`);
       if (loaded.has(name)) return { name, alreadyLoaded: true } as const;
+      if (loaded.size >= 2) {
+        throw new Error("Deux skills maximum par run : utilise les méthodes déjà chargées");
+      }
       loaded.add(name);
       return { name, instructions: skill.body } as const;
     },

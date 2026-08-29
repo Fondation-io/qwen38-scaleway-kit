@@ -150,6 +150,8 @@ describe("dates déterministes", () => {
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("INTERDICTION ABSOLUE");
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("ne calcule jamais toi-même");
     expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("date_calculator");
+    expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("appelle le tool dans le même tour");
+    expect(DETERMINISTIC_CALCULATION_PROTOCOL).toContain("ne termine jamais sur une intention");
   });
 });
 

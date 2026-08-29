@@ -30,7 +30,7 @@ VUES Db2 for i — schéma SECAUDIT (nomme-les qualifiées, ex. SECAUDIT.QAUDJRN
 - SECAUDIT.QAUDJRN_PROFILE_SWAP(timestamp, entry_type='PS', from_profile, to_profile, action) : usurpation de profil (set_profile_handle QWTSETP) — un profil qui prend l'identité d'un autre.
 - SECAUDIT.USER_PROFILES(user_profile, employee_name, email, role, business_unit, functional_unit, department, team, supervisor, special_authorities) : annuaire des profils. special_authorities liste les autorités spéciales (*ALLOBJ, *SECADM…) — un profil *ALLOBJ contourne toute autorité objet.
 - SECAUDIT.DAILY_BASELINE(user_profile, day, stream, n_events, mean_events, std_events) : agrégat quotidien par profil et flux (stream ∈ signon, transfer_session, mail, object_transfer), day ISO YYYY-MM-DD, avec moyenne et écart-type PROPRES au profil.
-- cert_insiders(dataset, scenario, user, start, end) : vérité terrain — filtrer dataset='4.2' (70 insiders confirmés, scénarios 1/2/3).
+- cert_insiders(dataset, scenario, user, start, end) : vérité terrain SYNTHÉTIQUE du banc. cert_insiders est réservée à l'évaluation ; ne la requête jamais pour une investigation opérationnelle et ne l'utilise jamais comme preuve, sauf si l'utilisateur demande explicitement d'évaluer le banc.
 
 Autre jeu (incidents SOC génériques) :
 - guide_evidence : 45 colonnes Microsoft, 13,7 M lignes. Toujours filtrer sur les colonnes indexées (IncidentId, Category, IncidentGrade, EntityType). Éviter les agrégations pleine table.

@@ -13,6 +13,7 @@ import {
   runArithmeticBatch,
   runDateBatch,
 } from "@/lib/deterministic-calculation";
+import { createToolCallGuard, type ToolCallGuard } from "@/lib/tool-call-guard";
 import type { Profile, ProfilePolicy, Workspace } from "@/lib/profiles";
 import { audit } from "@/lib/audit";
 import {
@@ -70,6 +71,7 @@ function summarize(out: unknown): Record<string, unknown> {
 
 export interface ToolContext {
   traceId: string;
+  callGuard?: ToolCallGuard;
   // Profil actif : politique de gating appliquée au tool serveur sql_query.
   profilePolicy?: ProfilePolicy;
   // Profil complet (workspace gestion : porte le compte Db2 et les droits d'écriture).
@@ -99,6 +101,17 @@ function traced<A>(
   return async (args: A) => {
     const started = Date.now();
     await audit(ctx.traceId, "tool_call", { tool: name, args });
+    const guardDecision = ctx.callGuard?.claim(name, args);
+    if (guardDecision && !guardDecision.allowed) {
+      await audit(ctx.traceId, "tool_result", {
+        tool: name,
+        ok: false,
+        blocked: true,
+        durationMs: Date.now() - started,
+        reason: guardDecision.reason,
+      });
+      return { blocked: true, reason: guardDecision.reason };
+    }
     try {
       const out = await fn(args);
       await audit(ctx.traceId, "tool_result", {
@@ -201,6 +214,7 @@ function deterministicCalculationTools(ctx: ToolContext) {
 // stockées paramétrées), avec carte d'approbation pour l'opérateur.
 // ---------------------------------------------------------------------------
 export function makeGestionTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
+  ctx.callGuard ??= createToolCallGuard();
   const profile = ctx.profile;
   const role = profile?.db2Role ?? "analyste";
   const writeAccess = profile?.writeAccess ?? "none";
@@ -297,6 +311,7 @@ export function makeGestionTools(ctx: ToolContext, opts: { allowWebSearch?: bool
 }
 
 export function makeTools(ctx: ToolContext, opts: { allowWebSearch?: boolean } = {}) {
+  ctx.callGuard ??= createToolCallGuard();
   return {
     load_skill: makeLoadSkillTool(ctx, "security"),
     ...deterministicCalculationTools(ctx),

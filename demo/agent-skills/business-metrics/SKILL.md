@@ -18,6 +18,7 @@ workspaces: [gestion]
 - Calcule les ratios, évolutions et nombres de transitions avec `calculator` depuis les agrégats retournés, puis recopie exactement les valeurs du tool.
 - Conserve les catégories NULL ou non traduites dans un groupe explicite.
 - Une concaténation avec NULL reste NULL : distingue explicitement « non renseigné » de « non traduit » avant l'agrégation.
+- Dès que tu écris « je calcule », appelle `calculator` immédiatement dans le même tour ; ne termine jamais sur une intention de calcul.
 
 ## Interdits
 
@@ -28,4 +29,4 @@ workspaces: [gestion]
 
 ## Forme de la conclusion
 
-Commence par les définitions, donne les chiffres contrôlés, puis sépare observations et hypothèses métier.
+Commence par les définitions, donne les chiffres contrôlés, puis sépare observations et hypothèses métier. Réconcilie une divergence de définition une seule fois, calcule et conclus sans exploration supplémentaire.

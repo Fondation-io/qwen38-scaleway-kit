@@ -18,13 +18,17 @@ workspaces: [security]
 - Exige un événement positif ou une chaîne de preuves pour déclarer une action réussie.
 - Respecte les refus de PII sans rechercher une autre table pour contourner la restriction.
 - Pour une corrélation, sélectionne les identifiants techniques, rôles et autorités nécessaires, jamais les noms, e-mails, superviseurs ou contenus en clair.
-- Arrête l'exploration lorsque les preuves suffisent au verdict ; au-delà de huit requêtes d'analyse, justifie l'information encore manquante.
+- Corrèle des sources réseau sur la même adresse IP exacte et une fenêtre compatible, jamais par simple appartenance au même sous-réseau.
+- `cert_insiders` est une vérité terrain synthétique réservée au benchmark : ne la requête pas et ne l'utilise jamais comme preuve dans une investigation opérationnelle, sauf demande explicite d'évaluation du banc.
+- N'accède à un contenu sensible que s'il est indispensable au verdict demandé et qu'aucun agrégat ne suffit. Après un refus, conclus avec les métadonnées disponibles sans rejouer l'analyse.
+- Arrête l'exploration lorsque les preuves suffisent au verdict ; vise six requêtes d'analyse et respecte le plafond serveur absolu.
 
 ## Interdits
 
 - Ne présente pas la vérité terrain synthétique comme une preuve de production.
 - Ne recommande pas un blocage permanent à partir d'un signal unique non confirmé.
 - Ne qualifie pas un profil de bénin ou malveillant sur la seule foi d'un contenu textuel.
+- Ne demande pas une approbation de contenu sensible pour enrichir une conclusion déjà établie par des métadonnées.
 
 ## Forme de la conclusion
 

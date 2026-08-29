@@ -9,7 +9,7 @@ workspaces: [security]
 1. Normalise les adresses sans inventer les valeurs absentes.
 2. Classe RFC1918, loopback, public et inconnu dans des groupes mutuellement exclusifs.
 3. Regroupe ensuite par profil, adresse, job ou service documenté et période.
-4. Garde les corpus distincts tant qu'aucune clé de correspondance n'est documentée.
+4. Corrèle deux sources uniquement sur la même adresse IP exacte et une fenêtre temporelle compatible ; garde les corpus distincts sinon.
 
 ## Contrôles obligatoires
 
@@ -18,6 +18,7 @@ workspaces: [security]
 - Les valeurs NULL ou vides restent dans une classe inconnue explicite.
 - La somme des classes doit être égale au total analysé.
 - Conserve le nom technique du job dans les résultats ; ne le traduit en service que si cette correspondance est documentée.
+- Attribue chaque événement à l'adresse exacte qui le porte : un événement IDS sur une IP ne confirme pas l'activité d'une autre IP du même sous-réseau.
 
 ## Interdits
 
@@ -25,6 +26,7 @@ workspaces: [security]
 - Ne déduis pas un protocole ou un service depuis un nom de job sans documentation probante.
 - Ne confonds pas origine privée et source de confiance.
 - Ne joins pas des profils ou adresses provenant de corpus distincts sur une simple ressemblance de valeur.
+- Ne présente jamais la proximité d'adresses ou un sous-réseau commun comme la preuve d'un même opérateur ; qualifie-la seulement d'hypothèse à vérifier.
 
 ## Forme de la conclusion
 

@@ -115,6 +115,36 @@ describe("catalogue de skills runtime Qwen", () => {
     });
   });
 
+  test("bloque une troisième skill distincte dans le même run", () => {
+    const catalog = readSkillCatalog(skillRoot);
+    const security = createSkillSession(catalog, "security");
+
+    security.load("network-origin-analysis");
+    security.load("temporal-correlation");
+    expect(() => security.load("security-signal-analysis")).toThrow(/deux skills maximum/i);
+  });
+
+  test("durcit les preuves réseau, sécurité et backlog", () => {
+    const catalog = readSkillCatalog(skillRoot);
+    const network = catalog.get("network-origin-analysis")?.body ?? "";
+    const security = catalog.get("security-signal-analysis")?.body ?? "";
+    const backlog = catalog.get("historical-backlog")?.body ?? "";
+    const business = catalog.get("business-metrics")?.body ?? "";
+
+    expect(network).toContain("adresse IP exacte");
+    expect(network).toContain("sous-réseau");
+    expect(security).toContain("cert_insiders");
+    expect(security).toContain("contenu sensible");
+    expect(backlog).toContain("un avis ne prouve pas une livraison");
+    expect(business).toContain("ne termine jamais sur une intention");
+  });
+
+  test("réserve la vérité terrain synthétique à l'évaluation", () => {
+    const source = readFileSync(join(process.cwd(), "app/api/chat/route.ts"), "utf8");
+    expect(source).toContain("cert_insiders est réservée à l'évaluation");
+    expect(source).toContain("ne la requête jamais pour une investigation opérationnelle");
+  });
+
   test("le résumé ne divulgue pas le corps des skills", () => {
     const catalog = readSkillCatalog(skillRoot);
     const summary = skillCatalogSummary(skillsForWorkspace(catalog, "gestion"));
@@ -129,6 +159,8 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(SKILL_SELECTION_PROTOCOL).toContain("toute demande de changement d'état");
     expect(SKILL_SELECTION_PROTOCOL).toContain("N'utilise aucun outil métier avant");
     expect(SKILL_SELECTION_PROTOCOL).toContain("deux skills maximum");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("bloquée côté serveur");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("Ne termine jamais sur une intention");
     expect(SKILL_SELECTION_PROTOCOL).toContain("n'étend jamais tes permissions");
     expect(SKILL_SELECTION_PROTOCOL).toContain("ne recharge jamais");
   });

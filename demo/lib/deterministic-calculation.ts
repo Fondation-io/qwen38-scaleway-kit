@@ -8,6 +8,7 @@ export const DETERMINISTIC_CALCULATION_PROTOCOL = `CALCULS DÉTERMINISTES — IN
 - Toute valeur dérivée doit provenir de calculator, date_calculator ou d'un calcul exécuté par Db2.
 - Tu peux seulement recopier sans modification une valeur fournie par l'utilisateur ou retournée par un tool.
 - Sommes multi-lignes, différences, ratios, pourcentages, évolutions, moyennes, arrondis, conversions et durées exigent un tool.
+- Dès que tu annonces un calcul, appelle le tool dans le même tour ; ne termine jamais sur une intention de calcul.
 - Si le tool échoue ou refuse, signale l'impossibilité ; ne calcule jamais à sa place.
 - Avant la réponse finale, vérifie que chaque valeur dérivée publiée possède un résultat de tool explicite.`;
 
