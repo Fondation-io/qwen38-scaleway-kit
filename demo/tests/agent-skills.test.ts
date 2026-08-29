@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   buildSkillCatalog,
+  createSkillSession,
   parseSkillDocument,
+  readSkillCatalog,
+  skillCatalogSummary,
   skillsForWorkspace,
   type RuntimeSkill,
 } from "../lib/agent-skills";
@@ -56,5 +60,39 @@ describe("catalogue de skills runtime Qwen", () => {
       "business-metrics",
       "data-reliability",
     ]);
+  });
+
+  const skillRoot = join(process.cwd(), "agent-skills");
+
+  test("charge les sept skills versionnées", () => {
+    expect([...readSkillCatalog(skillRoot).keys()].sort()).toEqual([
+      "business-metrics",
+      "data-reliability",
+      "governed-write",
+      "historical-backlog",
+      "network-origin-analysis",
+      "security-signal-analysis",
+      "temporal-correlation",
+    ]);
+  });
+
+  test("isole les deux workspaces et bloque les rechargements", () => {
+    const catalog = readSkillCatalog(skillRoot);
+    const security = createSkillSession(catalog, "security");
+    expect(() => security.load("business-metrics")).toThrow(/non autorisée/i);
+    expect(security.load("network-origin-analysis")).toMatchObject({
+      name: "network-origin-analysis",
+    });
+    expect(security.load("network-origin-analysis")).toEqual({
+      name: "network-origin-analysis",
+      alreadyLoaded: true,
+    });
+  });
+
+  test("le résumé ne divulgue pas le corps des skills", () => {
+    const catalog = readSkillCatalog(skillRoot);
+    const summary = skillCatalogSummary(skillsForWorkspace(catalog, "gestion"));
+    expect(summary).toContain("business-metrics");
+    expect(summary).not.toContain("COUNT(DISTINCT");
   });
 });

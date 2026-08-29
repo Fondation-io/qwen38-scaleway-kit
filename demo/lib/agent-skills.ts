@@ -102,3 +102,32 @@ export function skillsForWorkspace(catalog: SkillCatalog, workspace: Workspace):
     .filter((skill) => skill.workspaces.includes(workspace))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
+
+export function skillCatalogSummary(skills: RuntimeSkill[]): string {
+  return skills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
+}
+
+export function createSkillSession(catalog: SkillCatalog, workspace: Workspace) {
+  const allowed = new Map(
+    skillsForWorkspace(catalog, workspace).map((skill) => [skill.name, skill]),
+  );
+  const loaded = new Set<string>();
+
+  return {
+    skills: [...allowed.values()],
+    load(name: string) {
+      const skill = allowed.get(name);
+      if (!skill) throw new Error(`Skill non autorisée dans ${workspace}: ${name}`);
+      if (loaded.has(name)) return { name, alreadyLoaded: true } as const;
+      loaded.add(name);
+      return { name, instructions: skill.body } as const;
+    },
+  };
+}
+
+let cachedCatalog: SkillCatalog | undefined;
+
+export function getSkillCatalog(): SkillCatalog {
+  cachedCatalog ??= readSkillCatalog();
+  return cachedCatalog;
+}
