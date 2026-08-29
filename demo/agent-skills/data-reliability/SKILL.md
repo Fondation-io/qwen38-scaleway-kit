@@ -9,6 +9,7 @@ workspaces: [security, gestion]
 1. Définis l'entité comptée, le grain d'une ligne, la mesure et son dénominateur.
 2. Utilise les résultats des tools comme source de vérité et garde les sources distinctes tant qu'une clé commune n'est pas documentée.
 3. Réconcilie les totaux, sous-totaux, ratios et transitions avant de conclure.
+4. Effectue chaque calcul dérivé à partir des valeurs retournées et vérifie-le une seconde fois avant de l'écrire.
 
 ## Contrôles obligatoires
 
@@ -16,12 +17,14 @@ workspaces: [security, gestion]
 - Une statistique de profilage répétée pour chaque colonne décrit la même table : ne l'additionne jamais pour produire un volume global.
 - Signale les valeurs NULL, les groupes non classés et les sorties tronquées.
 - Identifie les corpus synthétiques, historiques, incomplets ou issus d'un autre système.
+- Mentionne les requêtes refusées ou en erreur ; ne présente jamais leur objet comme vérifié.
 
 ## Interdits
 
 - Ne fabrique pas une jointure entre deux systèmes sans identité et clé de correspondance prouvées.
 - Ne transforme pas une estimation, un nom de champ ou une convention supposée en fait.
 - Ne commente jamais de mémoire un ratio que les agrégats permettent de calculer.
+- N'invente pas une différence, un complément ou un taux absent des résultats contrôlés.
 
 ## Forme de la conclusion
 

@@ -67,7 +67,8 @@ describe("catalogue de skills runtime Qwen", () => {
   const skillRoot = join(process.cwd(), "agent-skills");
 
   test("charge les sept skills versionnées", () => {
-    expect([...readSkillCatalog(skillRoot).keys()].sort()).toEqual([
+    const catalog = readSkillCatalog(skillRoot);
+    expect([...catalog.keys()].sort()).toEqual([
       "business-metrics",
       "data-reliability",
       "governed-write",
@@ -76,6 +77,13 @@ describe("catalogue de skills runtime Qwen", () => {
       "security-signal-analysis",
       "temporal-correlation",
     ]);
+    expect(catalog.get("data-reliability")?.body).toContain("calcul dérivé");
+    expect(catalog.get("network-origin-analysis")?.body).toContain("corpus distincts");
+    expect(catalog.get("network-origin-analysis")?.body).toContain("nom technique du job");
+    expect(catalog.get("security-signal-analysis")?.body).toContain("temporal-correlation");
+    expect(catalog.get("temporal-correlation")?.body).toContain("MIN/MAX lexicographique");
+    expect(catalog.get("business-metrics")?.body).toContain("concaténation avec NULL");
+    expect(catalog.get("historical-backlog")?.body).toContain("échantillon");
   });
 
   test("isole les deux workspaces et bloque les rechargements", () => {
@@ -102,6 +110,7 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(SKILL_SELECTION_PROTOCOL).toContain("load_skill");
     expect(SKILL_SELECTION_PROTOCOL).toContain("PREMIER appel d'outil");
     expect(SKILL_SELECTION_PROTOCOL).toContain("plus d'une requête");
+    expect(SKILL_SELECTION_PROTOCOL).toContain("toute demande de changement d'état");
     expect(SKILL_SELECTION_PROTOCOL).toContain("N'utilise aucun outil métier avant");
     expect(SKILL_SELECTION_PROTOCOL).toContain("deux skills maximum");
     expect(SKILL_SELECTION_PROTOCOL).toContain("n'étend jamais tes permissions");

@@ -81,6 +81,7 @@ const AGGREGATE = /\b(count|sum|avg|min|max)\s*\(|\bgroup\s+by\b/i;
 const SENSITIVE_VIEW_COLUMNS: Record<string, string[]> = {
   qaudjrn_mail: ["recipients", "sender", "attachments", "content"],
   qaudjrn_object: ["object_preview"],
+  user_profiles: ["employee_name", "email", "supervisor"],
 };
 
 export interface RiskVerdict {

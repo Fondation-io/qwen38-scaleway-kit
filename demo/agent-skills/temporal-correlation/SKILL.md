@@ -16,6 +16,7 @@ workspaces: [security]
 - Distingue les événements antérieurs, simultanés et postérieurs.
 - Vérifie les unités et la durée réelle de la fenêtre.
 - Signale les timestamps invalides ou lexicographiquement ambigus.
+- Sur un timestamp texte non ISO, convertis avant le tri et les agrégats : un MIN/MAX lexicographique ne donne pas la première ou la dernière date.
 
 ## Interdits
 

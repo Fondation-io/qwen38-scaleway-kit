@@ -41,7 +41,7 @@ export interface Profile {
 
 // Liste maîtresse des colonnes de contenu sensible (charge utile exfiltrable + PII).
 // Corps de mail, objets exfiltrés, destinataires/expéditeur, pièces jointes, et
-// l'identité nominative des profils (SECAUDIT.USER_PROFILES).
+// l'identité nominative des profils et de leur hiérarchie (SECAUDIT.USER_PROFILES).
 export const SENSITIVE_COLUMNS = [
   "content",
   "object_preview",
@@ -50,6 +50,7 @@ export const SENSITIVE_COLUMNS = [
   "attachments",
   "employee_name",
   "email",
+  "supervisor",
 ];
 
 export const PROFILES: Profile[] = [

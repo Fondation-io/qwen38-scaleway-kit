@@ -16,6 +16,7 @@ workspaces: [gestion]
 - Précise si le chiffre d'affaires inclut prix, fret, annulations ou remboursements.
 - Calcule les ratios, évolutions et nombres de transitions depuis les agrégats retournés.
 - Conserve les catégories NULL ou non traduites dans un groupe explicite.
+- Une concaténation avec NULL reste NULL : distingue explicitement « non renseigné » de « non traduit » avant l'agrégation.
 
 ## Interdits
 
