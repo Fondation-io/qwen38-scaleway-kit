@@ -215,6 +215,7 @@ describe("intégration runtime", () => {
     expect(source).toContain("calculator: tool({");
     expect(source).toContain("date_calculator: tool({");
     expect(source).toContain("OBLIGATOIRE pour toute valeur arithmétique dérivée");
+    expect(source).toContain("percentage_change : values = [base, nouvelle valeur]");
     expect(source).toContain("OBLIGATOIRE pour toute différence ou conversion de date/durée");
     expect(source.match(/\.\.\.deterministicCalculationTools\(ctx\)/g)).toHaveLength(2);
   });

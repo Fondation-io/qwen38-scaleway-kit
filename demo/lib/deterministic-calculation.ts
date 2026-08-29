@@ -44,7 +44,13 @@ export const arithmeticBatchSchema = z.object({
           "percentage_change",
           "round",
         ]),
-        values: z.array(arithmeticOperand).min(1).max(200),
+        values: z
+          .array(arithmeticOperand)
+          .min(1)
+          .max(200)
+          .describe(
+            "Opérandes dans l'ordre. Pour percentage_change : values = [base, nouvelle valeur], résultat = (nouvelle - base) / base × 100. Pour subtract/divide/ratio : [première valeur, seconde valeur].",
+          ),
         scale: resultScale,
       }),
     )

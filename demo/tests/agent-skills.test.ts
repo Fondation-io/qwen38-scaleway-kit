@@ -90,6 +90,7 @@ describe("catalogue de skills runtime Qwen", () => {
     expect(catalog.get("temporal-correlation")?.body).toContain("jours actifs");
     expect(catalog.get("temporal-correlation")?.body).toContain("écart-type nul");
     expect(catalog.get("business-metrics")?.body).toContain("concaténation avec NULL");
+    expect(catalog.get("business-metrics")?.body).toContain("[Y, X]");
     expect(catalog.get("historical-backlog")?.body).toContain("échantillon");
   });
 
