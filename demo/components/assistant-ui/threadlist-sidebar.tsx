@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { MessagesSquare } from "lucide-react";
+import { FileText, MessagesSquare } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/github";
 import {
   Sidebar,
@@ -13,9 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 
-export function ThreadListSidebar({
-  ...props
-}: React.ComponentProps<typeof Sidebar>) {
+export function ThreadListSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar {...props}>
       <SidebarHeader className="aui-sidebar-header mb-2 border-b">
@@ -36,9 +34,7 @@ export function ThreadListSidebar({
                   <MessagesSquare className="aui-sidebar-header-icon size-4" />
                 </div>
                 <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
-                  <span className="aui-sidebar-header-title font-semibold">
-                    Enquête sécurité
-                  </span>
+                  <span className="aui-sidebar-header-title font-semibold">Enquête sécurité</span>
                   <span>IBM i · multi-modèle</span>
                 </div>
               </SidebarMenuButton>
@@ -57,6 +53,29 @@ export function ThreadListSidebar({
               size="lg"
               render={
                 <a
+                  href="/documents/rapport-validation-runbook-securite-agents-ibmi.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Ouvrir le rapport de validation au format PDF"
+                />
+              }
+            >
+              <div className="aui-sidebar-footer-icon-wrapper bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                <FileText className="aui-sidebar-footer-icon size-4" />
+              </div>
+              <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
+                <span className="aui-sidebar-footer-title font-semibold">
+                  Rapport de validation
+                </span>
+                <span>Runbook & résultats</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="lg"
+              render={
+                <a
                   href="https://github.com/Fondation-io/qwen38-scaleway-kit"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -67,9 +86,7 @@ export function ThreadListSidebar({
                 <GitHubIcon className="aui-sidebar-footer-icon size-4" />
               </div>
               <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
-                <span className="aui-sidebar-footer-title font-semibold">
-                  GitHub
-                </span>
+                <span className="aui-sidebar-footer-title font-semibold">GitHub</span>
                 <span>Code source</span>
               </div>
             </SidebarMenuButton>
