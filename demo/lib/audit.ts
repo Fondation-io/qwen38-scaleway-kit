@@ -16,6 +16,7 @@ export type AuditType =
   | "stream_error"
   | "client_error"
   | "sql_approval"
+  | "write_approval"
   | "injection_detected"
   | "injection_ack"
   | "process_error";

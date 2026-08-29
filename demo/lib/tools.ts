@@ -4,8 +4,9 @@ import { promisify } from "node:util";
 import { tool } from "ai";
 import { z } from "zod";
 import { runQuery } from "@/lib/db";
-import { assessRisk } from "@/lib/sql-guard";
-import type { ProfilePolicy } from "@/lib/profiles";
+import { assessRisk, guardDb2 } from "@/lib/sql-guard";
+import { db2Call, db2Query } from "@/lib/db2";
+import type { Profile, ProfilePolicy } from "@/lib/profiles";
 import { audit } from "@/lib/audit";
 import {
   webSearch,
@@ -65,6 +66,8 @@ export interface ToolContext {
   traceId: string;
   // Profil actif : politique de gating appliquée au tool serveur sql_query.
   profilePolicy?: ProfilePolicy;
+  // Profil complet (workspace gestion : porte le compte Db2 et les droits d'écriture).
+  profile?: Profile;
 }
 
 // Plafonne un résultat SQL avant de le renvoyer au modèle (économie de contexte),
@@ -154,6 +157,114 @@ function webExternalTools(ctx: ToolContext) {
       }),
       execute: traced(ctx, "fetch_url", ({ url }: { url: string }) => fetchUrl(url)),
     }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Workspace GESTION : outils sur la base Db2 réelle (GESTION/OLIST) via la
+// passerelle db2-gw. La gate Db2 est choisie par le WORKSPACE (jamais par la
+// syntaxe) ; les GRANTs du compte Db2 du profil sont le 2ème étage. Les
+// écritures ne passent QUE par set_order_status / record_payment (procédures
+// stockées paramétrées), avec carte d'approbation pour l'opérateur.
+// ---------------------------------------------------------------------------
+export function makeGestionTools(
+  ctx: ToolContext,
+  opts: { allowWebSearch?: boolean } = {},
+) {
+  const profile = ctx.profile;
+  const role = profile?.db2Role ?? "analyste";
+  const writeAccess = profile?.writeAccess ?? "none";
+
+  // Écriture encadrée commune aux deux outils : refus (profil sans écriture),
+  // carte d'approbation (opérateur), ou exécution directe de la procédure.
+  async function framedWrite(
+    proc: "SET_ORDER_STATUS" | "RECORD_PAYMENT",
+    args: Record<string, unknown>,
+  ) {
+    if (writeAccess === "none") {
+      return {
+        blocked: true,
+        reason:
+          "Le profil actif n'a aucun droit d'écriture. Seul l'opérateur ADV (via approbation) ou l'admin peuvent modifier les données.",
+      };
+    }
+    if (writeAccess === "procedures") {
+      // Carte d'approbation : le modèle rappelle request_write_approval avec
+      // les MÊMES arguments ; l'exécution passera par /api/db2-write.
+      return { status: "approval_required", proc, args };
+    }
+    const res = await db2Call(proc, args, role);
+    return "error" in res ? res : { ok: true, proc, args };
+  }
+
+  return {
+    sql_query: tool({
+      description:
+        "Exécute une requête SQL sur la base de gestion Db2 (schéma OLIST). SELECT/WITH uniquement — toute écriture passe par set_order_status ou record_payment. La requête s'exécute avec le compte Db2 du profil actif : un objet hors habilitation est refusé par la base (SQL0551N). Dialecte Db2 natif (FETCH FIRST n ROWS ONLY, YEAR(), MONTH(), DECIMAL()).",
+      inputSchema: z.object({
+        sql: z.string().describe("Requête SQL Db2 (SELECT ou WITH ... SELECT)"),
+      }),
+      execute: traced(ctx, "sql_query", async ({ sql }: { sql: string }) => {
+        const verdict = guardDb2(sql, {
+          unrestricted: writeAccess === "direct",
+        });
+        if (!verdict.ok) return { blocked: true, reason: verdict.reason };
+        const res = await db2Query(sql, role);
+        if ("error" in res) return res;
+        return capRows(res);
+      }),
+    }),
+
+    set_order_status: tool({
+      description:
+        "Change le statut d'une commande — SEULE voie autorisée pour cette écriture (procédure stockée paramétrée OLIST.SET_ORDER_STATUS, statuts validés côté base). Selon le profil : refus, carte d'approbation (rappelle alors request_write_approval avec les MÊMES arguments), ou exécution directe.",
+      inputSchema: z.object({
+        order_id: z.string().length(32).describe("Identifiant de commande (32 caractères)"),
+        status: z
+          .enum([
+            "created",
+            "approved",
+            "processing",
+            "invoiced",
+            "shipped",
+            "delivered",
+            "canceled",
+            "unavailable",
+          ])
+          .describe("Nouveau statut"),
+      }),
+      execute: traced(
+        ctx,
+        "set_order_status",
+        ({ order_id, status }: { order_id: string; status: string }) =>
+          framedWrite("SET_ORDER_STATUS", { order_id, status }),
+      ),
+    }),
+
+    record_payment: tool({
+      description:
+        "Enregistre un paiement sur une commande — SEULE voie autorisée pour cette écriture (procédure stockée paramétrée OLIST.RECORD_PAYMENT : type et montant validés côté base, numéro de séquence calculé). Selon le profil : refus, carte d'approbation (rappelle alors request_write_approval avec les MÊMES arguments), ou exécution directe.",
+      inputSchema: z.object({
+        order_id: z.string().length(32).describe("Identifiant de commande (32 caractères)"),
+        payment_type: z
+          .enum(["credit_card", "boleto", "voucher", "debit_card"])
+          .describe("Type de paiement"),
+        installments: z.number().int().min(1).max(24).describe("Nombre d'échéances"),
+        value: z.number().positive().describe("Montant (positif)"),
+      }),
+      execute: traced(
+        ctx,
+        "record_payment",
+        (args: {
+          order_id: string;
+          payment_type: string;
+          installments: number;
+          value: number;
+        }) => framedWrite("RECORD_PAYMENT", { ...args }),
+      ),
+    }),
+
+    ...(opts.allowWebSearch ? webExternalTools(ctx) : {}),
   };
 }
 

@@ -277,3 +277,116 @@ export function guardSql(sql: string, _policy?: ProfilePolicy): GuardVerdict {
   }
   return { ok: true, parsed: true };
 }
+
+// ---------------------------------------------------------------------------
+// Gate Db2 (workspace GESTION). Sélectionnée par le WORKSPACE, jamais par la
+// syntaxe : ici le moteur est un vrai Db2 (base GESTION, schéma OLIST) et le SQL
+// part tel quel (pas de normalisation vers SQLite). Défense à deux étages :
+// cette gate applicative d'abord, puis les GRANTs Db2 réels du compte connecté.
+// ---------------------------------------------------------------------------
+
+const DB2_OPT = { database: "db2" } as const;
+
+// Objets interrogeables du workspace gestion : 8 tables + 4 vues du schéma OLIST.
+const DB2_ALLOWED_TABLES = new Set([
+  "customers",
+  "orders",
+  "order_items",
+  "order_payments",
+  "order_reviews",
+  "products",
+  "sellers",
+  "category_translation",
+  "v_ca_mensuel",
+  "v_ventes_categorie",
+  "v_notes_avis",
+  "v_commandes_etat",
+]);
+
+const DB2_AVAILABLE_OBJECTS =
+  "Pas de catalogue système interrogeable (ni SYSCAT ni QSYS2). Interroge directement : " +
+  "OLIST.CUSTOMERS, OLIST.ORDERS, OLIST.ORDER_ITEMS, OLIST.ORDER_PAYMENTS, OLIST.ORDER_REVIEWS, " +
+  "OLIST.PRODUCTS, OLIST.SELLERS, OLIST.CATEGORY_TRANSLATION, OLIST.V_CA_MENSUEL, " +
+  "OLIST.V_VENTES_CATEGORIE, OLIST.V_NOTES_AVIS, OLIST.V_COMMANDES_ETAT.";
+
+const DB2_FORBIDDEN =
+  /\b(INSERT|UPDATE|DELETE|MERGE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|CALL|RENAME|COMMENT|LOCK|SET)\b/i;
+const DB2_BLOCKED_IDENTIFIERS = /\b(SYSCAT|SYSIBM|SYSSTAT|SYSIBMADM|SYSPROC|QSYS2)\b/i;
+
+// Repli fail-closed du dialecte Db2 (le support db2 de node-sql-parser est
+// partiel : ce repli sert souvent, il doit être strict).
+function db2ConservativeFallback(sql: string): GuardVerdict {
+  const text = sql.trim().replace(/;\s*$/, "");
+  const bare = stripStringLiterals(text);
+  if (bare.includes(";"))
+    return { ok: false, parsed: false, reason: "Une seule instruction SQL autorisée." };
+  if (!/^(SELECT|WITH)\b/i.test(text))
+    return { ok: false, parsed: false, reason: "Lecture seule (SELECT ou WITH)." };
+  if (DB2_FORBIDDEN.test(bare))
+    return { ok: false, parsed: false, reason: "Mot-clé interdit (écriture/DDL/CALL…). Les écritures passent par les outils dédiés." };
+  if (DB2_BLOCKED_IDENTIFIERS.test(bare))
+    return { ok: false, parsed: false, reason: `Catalogue système interdit. ${DB2_AVAILABLE_OBJECTS}` };
+  return { ok: true, parsed: false };
+}
+
+// Garde structurelle Db2. `unrestricted` (profil admin sur-privilégié) débraye
+// tout SAUF le mono-instruction : les GRANTs DATAACCESS du compte admin laissent
+// alors passer lectures ET écritures directes — c'est le point pédagogique.
+export function guardDb2(
+  sql: string,
+  opts: { unrestricted?: boolean } = {},
+): GuardVerdict {
+  if (opts.unrestricted) {
+    const bare = stripStringLiterals(sql.trim().replace(/;\s*$/, ""));
+    if (bare.includes(";"))
+      return { ok: false, parsed: false, reason: "Une seule instruction SQL autorisée." };
+    return { ok: true, parsed: false };
+  }
+
+  let tableList: string[];
+  let cteNames: Set<string>;
+  try {
+    const ast = parser.astify(sql, DB2_OPT);
+    const statements = Array.isArray(ast) ? ast : [ast];
+    if (statements.length !== 1)
+      return { ok: false, parsed: true, reason: "Une seule instruction SQL autorisée." };
+    const stmt = statements[0] as {
+      type?: string;
+      with?: Array<{ name?: { value?: string } }> | null;
+    };
+    if (stmt.type !== "select")
+      return {
+        ok: false,
+        parsed: true,
+        reason: `Opération '${stmt.type ?? "inconnue"}' interdite : SELECT uniquement (les écritures passent par les outils dédiés).`,
+      };
+    cteNames = new Set(
+      (stmt.with ?? [])
+        .map((c) => c.name?.value)
+        .filter((v): v is string => typeof v === "string"),
+    );
+    tableList = parser.tableList(sql, DB2_OPT);
+  } catch {
+    return db2ConservativeFallback(sql);
+  }
+
+  for (const entry of tableList) {
+    const parts = entry.split("::");
+    const authority = parts[0];
+    const table = parts[2];
+    if (authority !== "select")
+      return {
+        ok: false,
+        parsed: true,
+        reason: `Accès '${authority}' sur ${table} interdit (lecture seule via sql_query).`,
+      };
+    if (cteNames.has(table)) continue;
+    if (!DB2_ALLOWED_TABLES.has(table.toLowerCase()))
+      return {
+        ok: false,
+        parsed: true,
+        reason: `Table/vue hors périmètre : ${table}. ${DB2_AVAILABLE_OBJECTS}`,
+      };
+  }
+  return { ok: true, parsed: true };
+}

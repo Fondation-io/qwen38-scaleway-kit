@@ -8,8 +8,9 @@
 
 import { useState } from "react";
 import { CheckIcon, ShieldIcon } from "lucide-react";
-import { PROFILES } from "@/lib/profiles";
+import { profilesFor } from "@/lib/profiles";
 import { useProfile } from "@/app/runtime/profile-context";
+import { useWorkspace } from "@/app/runtime/workspace-context";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,8 @@ function AuthorityBadge({ authorities }: { authorities: string }) {
 
 export function ProfileSelector() {
   const { profile, setProfile } = useProfile();
+  const { workspace } = useWorkspace();
+  const profiles = profilesFor(workspace);
   const [open, setOpen] = useState(false);
 
   return (
@@ -63,7 +66,7 @@ export function ProfileSelector() {
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
-          {PROFILES.map((p) => {
+          {profiles.map((p) => {
             const active = p.id === profile.id;
             return (
               <button

@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
+import { defaultProfileId } from "@/lib/profiles";
+
 import {
   AssistantRuntimeProvider,
   AuiConfig,
@@ -13,14 +16,18 @@ import {
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ProfileProvider, useProfile, getActiveProfileId } from "@/app/runtime/profile-context";
+import { WorkspaceProvider, useWorkspace, getActiveWorkspace } from "@/app/runtime/workspace-context";
 import { ReasoningProvider, getReasoningMode } from "@/app/runtime/reasoning-context";
 import { WebSearchProvider, getWebSearchEnabled } from "@/app/runtime/websearch-context";
 import { ModelProvider, getActiveModelId } from "@/app/runtime/model-context";
 import { threadListAdapter } from "@/app/runtime/thread-adapter";
 import { ProfileSelector } from "@/components/profile-selector";
+import { WorkspaceSelector } from "@/components/workspace-selector";
 import { ModelSelector } from "@/components/model-selector";
 import { DescribeDataToolUI, SqlQueryToolUI } from "@/components/tool-uis/sql-tool";
 import { SqlApprovalTool } from "@/components/tool-uis/sql-approval";
+import { WriteApprovalTool } from "@/components/tool-uis/write-approval";
+import { SetOrderStatusToolUI, RecordPaymentToolUI } from "@/components/tool-uis/write-tool";
 import { ReportInjectionTool } from "@/components/tool-uis/report-injection";
 import {
   UserTimelineToolUI,
@@ -43,7 +50,7 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 
-const config = AuiConfig({
+const securityConfig = AuiConfig({
   suggestions: Suggestions([
     "Décris les données disponibles",
     "Pot de miel IBM i (HONEYPOT) : distingue le bruit de fond des attaques réellement ciblées, et identifie la menace la plus crédible pour ce serveur. Justifie par les chiffres.",
@@ -52,15 +59,31 @@ const config = AuiConfig({
   ]),
 });
 
+const gestionConfig = AuiConfig({
+  suggestions: Suggestions([
+    "Décris les données de gestion disponibles",
+    "Chiffre d'affaires mensuel 2017 et tendance",
+    "Top 10 des catégories par chiffre d'affaires, avec panier moyen",
+    "Quelles commandes sont bloquées en statut processing depuis le plus longtemps ?",
+  ]),
+});
+
+const WORKSPACE_TITLES = {
+  security: "Enquête sécurité — démo IBM i",
+  gestion: "Gestion commerciale — démo IBM i",
+} as const;
+
 const Welcome = () => {
+  const { workspace } = useWorkspace();
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col items-center px-4 text-center">
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-medium tracking-tight duration-200">
-        Enquête sécurité — démo IBM i
+        {WORKSPACE_TITLES[workspace]}
       </h1>
       <p className="text-muted-foreground fade-in slide-in-from-bottom-1 animate-in fill-mode-both mt-2 text-sm duration-200">
-        Posez une question sur les journaux d&apos;activité ou choisissez une
-        suggestion ci-dessous.
+        {workspace === "gestion"
+          ? "Interrogez la base de gestion Db2 ou choisissez une suggestion ci-dessous."
+          : "Posez une question sur les journaux d'activité ou choisissez une suggestion ci-dessous."}
       </p>
     </div>
   );
@@ -71,6 +94,8 @@ const Welcome = () => {
 // threads cloisonnée (D7). Le header du transport et l'adapter de threads lisent
 // le profil actif de manière SYNCHRONE depuis le singleton `getActiveProfileId`.
 const AssistantRuntime = () => {
+  const { workspace } = useWorkspace();
+  const config = workspace === "gestion" ? gestionConfig : securityConfig;
   const runtime = useRemoteThreadListRuntime({
     runtimeHook: () =>
       useChatRuntime({
@@ -80,6 +105,7 @@ const AssistantRuntime = () => {
           // Lecture SYNCHRONE des singletons : le niveau de réflexion suit sans
           // remonter le runtime (contrairement au profil, via la `key`).
           headers: () => ({
+            "x-demo-workspace": getActiveWorkspace(),
             "x-demo-profile": getActiveProfileId(),
             "x-demo-thinking": getReasoningMode(),
             "x-demo-model": getActiveModelId(),
@@ -93,8 +119,11 @@ const AssistantRuntime = () => {
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
       <SqlApprovalTool />
+      <WriteApprovalTool />
       <ReportInjectionTool />
       <SqlQueryToolUI />
+      <SetOrderStatusToolUI />
+      <RecordPaymentToolUI />
       <DescribeDataToolUI />
       <UserTimelineToolUI />
       <TransferSessionsToolUI />
@@ -111,12 +140,13 @@ const AssistantRuntime = () => {
                 <BreadcrumbList>
                   <BreadcrumbItem>
                     <BreadcrumbPage>
-                      Enquête sécurité — démo IBM i
+                      {WORKSPACE_TITLES[workspace]}
                     </BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
               <div className="ml-auto flex items-center gap-2">
+                <WorkspaceSelector />
                 <ModelSelector />
                 <ProfileSelector />
                 <AuditLog />
@@ -135,8 +165,15 @@ const AssistantRuntime = () => {
 // Remonte tout le runtime quand le profil change : `list()` est rappelé avec le
 // nouveau header `x-demo-profile`, donc la liste de threads bascule.
 const AssistantWithProfile = () => {
-  const { profile } = useProfile();
-  return <AssistantRuntime key={profile.id} />;
+  const { profile, setProfile } = useProfile();
+  const { workspace } = useWorkspace();
+  // Cohérence workspace/profil (ex. localStorage divergent après mise à jour) :
+  // un profil hors workspace bascule sur le défaut du workspace actif.
+  useEffect(() => {
+    if (profile.workspace !== workspace) setProfile(defaultProfileId(workspace));
+  }, [profile, workspace, setProfile]);
+  if (profile.workspace !== workspace) return null;
+  return <AssistantRuntime key={`${workspace}:${profile.id}`} />;
 };
 
 export const Assistant = () => {
@@ -144,9 +181,11 @@ export const Assistant = () => {
     <ModelProvider>
       <ReasoningProvider>
         <WebSearchProvider>
-          <ProfileProvider>
-            <AssistantWithProfile />
-          </ProfileProvider>
+          <WorkspaceProvider>
+            <ProfileProvider>
+              <AssistantWithProfile />
+            </ProfileProvider>
+          </WorkspaceProvider>
         </WebSearchProvider>
       </ReasoningProvider>
     </ModelProvider>
