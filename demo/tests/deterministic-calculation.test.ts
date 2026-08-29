@@ -86,6 +86,59 @@ describe("calculs arithmétiques déterministes", () => {
     expect(result.results.map((entry) => entry.value)).toEqual(["163.30", "112.8", "4.0", "2.35"]);
   });
 
+  test("réutilise un résultat précédent sans recopier le nombre", () => {
+    const result = runArithmeticBatch({
+      calculations: [
+        {
+          id: "orders",
+          operation: "sum",
+          values: [
+            "750",
+            "1653",
+            "2546",
+            "2303",
+            "3546",
+            "3135",
+            "3872",
+            "4193",
+            "4150",
+            "4478",
+            "7289",
+            "5513",
+          ],
+          scale: 0,
+        },
+        {
+          id: "annual_basket",
+          operation: "divide",
+          values: ["5962902.01", { ref: "orders" }],
+          scale: 2,
+        },
+      ],
+    });
+
+    expect(result.results[1]).toMatchObject({
+      id: "annual_basket",
+      value: "137.31",
+      resolvedValues: ["5962902.01", "43428"],
+    });
+  });
+
+  test("refuse une référence inconnue ou future", () => {
+    expect(() =>
+      runArithmeticBatch({
+        calculations: [
+          {
+            id: "basket",
+            operation: "divide",
+            values: ["5962902.01", { ref: "orders" }],
+            scale: 2,
+          },
+        ],
+      }),
+    ).toThrow(/référence/i);
+  });
+
   test("refuse la division par zéro", () => {
     expect(() =>
       runArithmeticBatch({

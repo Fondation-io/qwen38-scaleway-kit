@@ -193,7 +193,7 @@ function deterministicCalculationTools(ctx: ToolContext) {
   return {
     calculator: tool({
       description:
-        "OBLIGATOIRE pour toute valeur arithmétique dérivée, même triviale : somme, différence, produit, division, moyenne, médiane, minimum, maximum, ratio, pourcentage, évolution ou arrondi. Fournis les nombres comme chaînes décimales et réutilise exactement le résultat retourné ; ne calcule jamais toi-même.",
+        'OBLIGATOIRE pour toute valeur arithmétique dérivée, même triviale : somme, différence, produit, division, moyenne, médiane, minimum, maximum, ratio, pourcentage, évolution ou arrondi. Fournis les nombres comme chaînes décimales. Pour réutiliser un résultat précédent du même batch, passe {ref:"id"} au lieu de recopier ou deviner le nombre. Réutilise exactement le résultat retourné ; ne calcule jamais toi-même.',
       inputSchema: arithmeticBatchSchema,
       execute: traced(ctx, "calculator", async (args) => runArithmeticBatch(args)),
     }),

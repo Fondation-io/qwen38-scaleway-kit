@@ -8,6 +8,7 @@ export const DETERMINISTIC_CALCULATION_PROTOCOL = `CALCULS DÉTERMINISTES — IN
 - Toute valeur dérivée doit provenir de calculator, date_calculator ou d'un calcul exécuté par Db2.
 - Tu peux seulement recopier sans modification une valeur fournie par l'utilisateur ou retournée par un tool.
 - Sommes multi-lignes, différences, ratios, pourcentages, évolutions, moyennes, arrondis, conversions et durées exigent un tool.
+- Si un calcul dépend d'un résultat précédent du même batch, utilise {ref:"id"}. Ne recopie et ne devine jamais cet intermédiaire.
 - Dès que tu annonces un calcul, appelle le tool dans le même tour ; ne termine jamais sur une intention de calcul.
 - Si le tool échoue ou refuse, signale l'impossibilité ; ne calcule jamais à sa place.
 - Avant la réponse finale, vérifie que chaque valeur dérivée publiée possède un résultat de tool explicite.`;
@@ -19,6 +20,10 @@ const nonNegativeDecimalString = z
   .string()
   .regex(/^(?:\d+(?:\.\d*)?|\.\d+)$/, "Durée positive attendue sous forme de chaîne");
 const resultScale = z.number().int().min(0).max(12).default(6);
+const arithmeticOperand = z.union([
+  decimalString,
+  z.object({ ref: z.string().min(1).max(80) }).strict(),
+]);
 
 export const arithmeticBatchSchema = z.object({
   calculations: z
@@ -39,7 +44,7 @@ export const arithmeticBatchSchema = z.object({
           "percentage_change",
           "round",
         ]),
-        values: z.array(decimalString).min(1).max(200),
+        values: z.array(arithmeticOperand).min(1).max(200),
         scale: resultScale,
       }),
     )
@@ -56,6 +61,7 @@ export interface ArithmeticBatchResult {
     operation: ArithmeticCalculation["operation"];
     value: string;
     scale: number;
+    resolvedValues: string[];
   }>;
 }
 
@@ -81,8 +87,11 @@ function safeDivide(numerator: Decimal, denominator: Decimal, id: string): Decim
   return numerator.dividedBy(denominator);
 }
 
-function calculateArithmetic(calculation: ArithmeticCalculation): Decimal {
-  const values = calculation.values.map((value) => new Decimal(value));
+function calculateArithmetic(
+  calculation: ArithmeticCalculation,
+  resolvedValues: string[],
+): Decimal {
+  const values = resolvedValues.map((value) => new Decimal(value));
 
   switch (calculation.operation) {
     case "sum":
@@ -131,14 +140,35 @@ function fixed(value: Decimal, scale: number): string {
 
 export function runArithmeticBatch(input: unknown): ArithmeticBatchResult {
   const parsed = arithmeticBatchSchema.parse(input);
-  return {
-    source: "calculator",
-    results: parsed.calculations.map((calculation) => ({
+  const previous = new Map<string, string>();
+  const results: ArithmeticBatchResult["results"] = [];
+
+  for (const calculation of parsed.calculations) {
+    if (previous.has(calculation.id)) {
+      throw new Error(`${calculation.id}: identifiant de calcul dupliqué`);
+    }
+    const resolvedValues = calculation.values.map((operand) => {
+      if (typeof operand === "string") return operand;
+      const value = previous.get(operand.ref);
+      if (value === undefined) {
+        throw new Error(`${calculation.id}: référence inconnue ou future vers ${operand.ref}`);
+      }
+      return value;
+    });
+    const value = fixed(calculateArithmetic(calculation, resolvedValues), calculation.scale);
+    previous.set(calculation.id, value);
+    results.push({
       id: calculation.id,
       operation: calculation.operation,
-      value: fixed(calculateArithmetic(calculation), calculation.scale),
+      value,
       scale: calculation.scale,
-    })),
+      resolvedValues,
+    });
+  }
+
+  return {
+    source: "calculator",
+    results,
   };
 }
 
